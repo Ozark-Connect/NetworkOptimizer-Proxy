@@ -114,7 +114,7 @@ http:
     noop:
       loadBalancer:
         servers:
-          - url: "http://127.0.0.1:8080"
+          - url: "http://127.0.0.1:8099"
 
     # Network Optimizer web UI
     optimizer:

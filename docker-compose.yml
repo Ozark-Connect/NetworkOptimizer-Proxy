@@ -12,7 +12,7 @@ services:
       # --- Entrypoints ---
       - "--entrypoints.web.address=${LISTEN_IP:-0.0.0.0}:80"
       - "--entrypoints.websecure.address=${LISTEN_IP:-0.0.0.0}:443"
-      - "--entrypoints.traefik.address=127.0.0.1:8080"
+      - "--entrypoints.traefik.address=127.0.0.1:${TRAEFIK_API_PORT:-8099}"
 
       # --- File provider (dynamic config) ---
       - "--providers.file.directory=/etc/traefik/dynamic/"
