@@ -13,7 +13,7 @@ Traefik supports per-router TLS options, including ALPN protocol selection. This
 ## Quick Start (Docker)
 
 ```bash
-git clone git@github.com:Ozark-Connect/NetworkOptimizer-Proxy.git
+git clone https://github.com/Ozark-Connect/NetworkOptimizer-Proxy.git
 cd NetworkOptimizer-Proxy
 
 # Run setup script (creates config files from examples, sets permissions)
