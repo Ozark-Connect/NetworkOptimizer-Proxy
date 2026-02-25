@@ -10,7 +10,7 @@ OpenSpeedTest requires HTTP/1.1 for accurate throughput measurements - HTTP/2 mu
 
 Traefik supports per-router TLS options, including ALPN protocol selection. This setup uses a custom TLS option (`h1only`) that only advertises `http/1.1` during the TLS handshake for the speed test hostname, while the main app uses the default HTTP/2 negotiation. One proxy, one IP, one port 443.
 
-## Quick Start
+## Quick Start (Docker)
 
 ```bash
 git clone git@github.com:Ozark-Connect/NetworkOptimizer-Proxy.git
@@ -27,9 +27,21 @@ nano dynamic/config.yml      # Update hostnames
 docker compose up -d
 ```
 
+## Windows (MSI)
+
+Traefik is included as an optional feature in the Network Optimizer MSI installer. When selected, the installer prompts for Cloudflare DNS settings and the service manages Traefik as a child process alongside nginx.
+
+The `windows/` directory contains the templates and download script used by the MSI build:
+- `traefik.yml.template` - Static config with placeholders for registry values
+- `config.yml.template` - Dynamic config with placeholders for hostnames/ports
+- `Download-Traefik.ps1` - Downloads the Traefik binary for the installer build
+
+See the [Network Optimizer installation docs](https://github.com/Ozark-Connect/NetworkOptimizer) for details.
+
 ## Requirements
 
-- Docker and Docker Compose
+- **Docker**: Docker and Docker Compose
+- **Windows**: Network Optimizer MSI installer (Traefik feature)
 - A domain with DNS managed by Cloudflare (for automatic Let's Encrypt certificates)
 - Two DNS A records pointing to the host running Traefik:
   - `optimizer.yourdomain.com` - Network Optimizer web UI
@@ -107,9 +119,7 @@ speedtest:
 
 ### Speed Test Optimizations
 
-In addition to HTTP/1.1, the speed test route:
-- Strips the `Accept-Encoding` header to prevent transparent compression
-- Allows 35MB request/response bodies for upload/download tests
+In addition to HTTP/1.1, the speed test route strips the `Accept-Encoding` header to prevent transparent compression from skewing results.
 
 ### Automatic HTTPS
 
