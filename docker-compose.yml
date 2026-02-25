@@ -8,8 +8,6 @@ services:
     network_mode: host
     environment:
       CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN}
-      CF_PROPAGATION_TIMEOUT: 300
-      CF_POLLING_INTERVAL: 10
     command:
       # --- Entrypoints ---
       - "--entrypoints.web.address=${LISTEN_IP:-0.0.0.0}:80"
@@ -27,6 +25,7 @@ services:
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare"
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53"
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge.delaybeforecheck=15"
+      - "--certificatesresolvers.letsencrypt.acme.dnschallenge.disablepropagationcheck=true"
 
       # --- Ping (used as noop backend for redirects / cert-only domains) ---
       - "--ping=true"
