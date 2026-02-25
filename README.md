@@ -29,14 +29,11 @@ docker compose up -d
 
 ## Windows (MSI)
 
-Traefik is included as an optional feature in the Network Optimizer MSI installer. When selected, the installer prompts for Cloudflare DNS settings and the service manages Traefik as a child process alongside nginx.
+Traefik is included as an optional feature in the [Network Optimizer MSI installer](https://github.com/Ozark-Connect/NetworkOptimizer/releases). When selected, the installer prompts for Cloudflare DNS settings and the service manages Traefik as a child process alongside nginx.
 
-The `windows/` directory contains the templates and download script used by the MSI build:
+The `windows/` directory contains the config templates used by the MSI build:
 - `traefik.yml.template` - Static config with placeholders for registry values
 - `config.yml.template` - Dynamic config with placeholders for hostnames/ports
-- `Download-Traefik.ps1` - Downloads the Traefik binary for the installer build
-
-See the [Network Optimizer installation docs](https://github.com/Ozark-Connect/NetworkOptimizer) for details.
 
 ## Requirements
 
