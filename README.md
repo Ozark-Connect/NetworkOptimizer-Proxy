@@ -181,7 +181,7 @@ Internet
     |
     |-- optimizer.example.com (HTTP/2, default TLS)  -->  localhost:8042
     |
-    |-- speedtest.example.com (HTTP/1.1, h1only TLS) -->  localhost:8043
+    |-- speedtest.example.com (HTTP/1.1, h1only TLS) -->  localhost:3005
     |
     |-- (other services...)
     |
