@@ -1,6 +1,9 @@
 # Secrets
 .env
 
+# Claude Code
+CLAUDE.md
+
 # Dynamic config (user-specific, not tracked)
 dynamic/*.yml
 
