@@ -37,8 +37,8 @@ The `windows/` directory contains the config templates used by the MSI build:
 
 ## Requirements
 
-- **Docker**: Docker and Docker Compose
-- **Windows**: Network Optimizer MSI installer (Traefik feature)
+- **For Linux**: Docker and Docker Compose
+- **For Windows**: Network Optimizer MSI installer (Traefik feature)
 - A domain with DNS managed by Cloudflare (for automatic Let's Encrypt certificates)
 - Two DNS A records pointing to the host running Traefik:
   - e.g. `optimizer.yourdomain.com` - Network Optimizer web UI
