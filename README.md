@@ -44,8 +44,8 @@ See the [Network Optimizer installation docs](https://github.com/Ozark-Connect/N
 - **Windows**: Network Optimizer MSI installer (Traefik feature)
 - A domain with DNS managed by Cloudflare (for automatic Let's Encrypt certificates)
 - Two DNS A records pointing to the host running Traefik:
-  - `optimizer.yourdomain.com` - Network Optimizer web UI
-  - `speedtest.yourdomain.com` - OpenSpeedTest (HTTP/1.1)
+  - e.g. `optimizer.yourdomain.com` - Network Optimizer web UI
+  - e.g. `speedtest.yourdomain.com` - OpenSpeedTest (HTTP/1.1)
 
 ## Configuration
 
