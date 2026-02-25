@@ -17,7 +17,7 @@ git clone git@github.com:Ozark-Connect/NetworkOptimizer-Proxy.git
 cd NetworkOptimizer-Proxy
 
 # Run setup script (creates config files from examples, sets permissions)
-bash scripts/setup.sh
+bash setup.sh
 
 # Edit your configuration
 nano .env                    # Cloudflare token, email, listen IP

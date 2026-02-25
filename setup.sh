@@ -4,8 +4,7 @@ set -euo pipefail
 # NetworkOptimizer-Proxy first-time setup
 # Creates config files from examples and sets correct permissions
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "NetworkOptimizer-Proxy Setup"
 echo "============================"
