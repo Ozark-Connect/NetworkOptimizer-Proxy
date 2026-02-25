@@ -55,11 +55,6 @@ http:
         customRequestHeaders:
           Accept-Encoding: ""
 
-    # Buffer upload request bodies (POST) for throughput; no response buffering
-    speedtest-upload-buffering:
-      buffering:
-        maxRequestBodyBytes: 36700160
-
     # Example: restrict to LAN only (customize these subnets for your network)
     lan-only:
       ipAllowList:
@@ -105,7 +100,6 @@ http:
       middlewares:
         - security-headers
         - speedtest-headers
-        - speedtest-upload-buffering
 
   # --- Services --------------------------------------------------------------
   services:
