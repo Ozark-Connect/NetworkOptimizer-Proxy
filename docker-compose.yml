@@ -1,0 +1,51 @@
+name: traefik-proxy
+
+services:
+  traefik:
+    image: traefik:v3
+    container_name: traefik-proxy
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN}
+    command:
+      # --- Entrypoints ---
+      - "--entrypoints.web.address=${LISTEN_IP:-0.0.0.0}:80"
+      - "--entrypoints.websecure.address=${LISTEN_IP:-0.0.0.0}:443"
+      - "--entrypoints.traefik.address=127.0.0.1:8080"
+
+      # --- File provider (dynamic config) ---
+      - "--providers.file.directory=/etc/traefik/dynamic/"
+      - "--providers.file.watch=true"
+
+      # --- Let's Encrypt (DNS-01 via Cloudflare) ---
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.dnschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.letsencrypt.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53"
+
+      # --- Ping (used as noop backend for redirects / cert-only domains) ---
+      - "--ping=true"
+
+      # --- API (dashboard disabled by default) ---
+      - "--api=true"
+      - "--api.dashboard=false"
+
+      # --- Logging ---
+      - "--log.level=${LOG_LEVEL:-INFO}"
+      - "--accesslog=true"
+      - "--accesslog.filepath=/var/log/traefik/access.log"
+      - "--accesslog.bufferingsize=100"
+    volumes:
+      - ./dynamic:/etc/traefik/dynamic:ro
+      - ./acme:/etc/traefik/acme
+      - traefik-logs:/var/log/traefik
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  traefik-logs:

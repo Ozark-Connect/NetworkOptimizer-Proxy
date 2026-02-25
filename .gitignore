@@ -1,0 +1,12 @@
+# Secrets
+.env
+
+# Dynamic config (only examples are tracked)
+dynamic/*.yml
+!dynamic/*.example.yml
+
+# ACME certificate storage
+acme/
+
+# Logs
+*.log

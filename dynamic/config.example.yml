@@ -1,0 +1,129 @@
+# NetworkOptimizer-Proxy - Example Dynamic Configuration
+#
+# Copy this file to config.yml and update the hostnames to match your setup:
+#   cp config.example.yml config.yml
+#
+# The key feature: speedtest uses the "h1only" TLS option, which forces HTTP/1.1
+# on the client connection via ALPN negotiation. This is required for accurate
+# speed test results - HTTP/2 multiplexing and flow control interfere with
+# throughput measurements.
+
+# ---------------------------------------------------------------------------
+# TLS Options
+# ---------------------------------------------------------------------------
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+    h1only:
+      minVersion: VersionTLS12
+      alpnProtocols:
+        - "http/1.1"
+
+# ---------------------------------------------------------------------------
+# HTTP Configuration
+# ---------------------------------------------------------------------------
+http:
+
+  # --- Middlewares -----------------------------------------------------------
+  middlewares:
+    # Security headers applied to all HTTPS routes
+    security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        customResponseHeaders:
+          Server: ""
+
+    # gzip compression for normal services
+    compress:
+      compress: {}
+
+    # HTTP -> HTTPS catch-all redirect
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    # Strip Accept-Encoding to prevent transparent compression (skews speed results)
+    speedtest-headers:
+      headers:
+        customRequestHeaders:
+          Accept-Encoding: ""
+
+    # Large buffers for speed test uploads/downloads
+    speedtest-buffering:
+      buffering:
+        maxRequestBodyBytes: 36700160
+        maxResponseBodyBytes: 36700160
+
+    # Example: restrict to LAN only (customize these subnets for your network)
+    lan-only:
+      ipAllowList:
+        sourceRange:
+          - "192.168.0.0/16"
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+
+  # --- Routers ---------------------------------------------------------------
+  routers:
+    # Redirect all HTTP to HTTPS
+    http-catchall:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - web
+      service: noop
+      middlewares:
+        - https-redirect
+      priority: 1
+
+    # Network Optimizer - main app (HTTP/2, default TLS)
+    optimizer:
+      rule: "Host(`optimizer.example.com`)"
+      entryPoints:
+        - websecure
+      service: optimizer
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - security-headers
+        - compress
+        - lan-only
+
+    # Speed Test - forced HTTP/1.1 via h1only TLS option
+    speedtest:
+      rule: "Host(`speedtest.example.com`)"
+      entryPoints:
+        - websecure
+      service: speedtest
+      tls:
+        certResolver: letsencrypt
+        options: h1only
+      middlewares:
+        - security-headers
+        - speedtest-headers
+        - speedtest-buffering
+
+  # --- Services --------------------------------------------------------------
+  services:
+    # Noop backend - Traefik's own ping endpoint (for redirects / cert-only domains)
+    noop:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8080"
+
+    # Network Optimizer web UI
+    optimizer:
+      loadBalancer:
+        servers:
+          - url: "http://localhost:8042"
+
+    # OpenSpeedTest (runs inside the Network Optimizer container on a separate port)
+    speedtest:
+      loadBalancer:
+        servers:
+          - url: "http://localhost:8043"
