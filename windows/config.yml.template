@@ -31,8 +31,20 @@ http:
 
   # --- Middlewares -----------------------------------------------------------
   middlewares:
-    # Security headers applied to all HTTPS routes
+    # Security headers with HSTS (main app)
     security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        customFrameOptionsValue: "SAMEORIGIN"
+        contentTypeNosniff: true
+        browserXssFilter: true
+        customResponseHeaders:
+          Server: ""
+
+    # Security headers for speedtest (SAMEORIGIN instead of DENY for <object> SVG loading)
+    speedtest-security-headers:
       headers:
         stsSeconds: 31536000
         stsIncludeSubdomains: true
@@ -47,7 +59,7 @@ http:
     compress:
       compress: {}
 
-    # HTTP -> HTTPS catch-all redirect
+    # HTTP -> HTTPS redirect
     https-redirect:
       redirectScheme:
         scheme: https
@@ -61,7 +73,7 @@ http:
 
   # --- Routers ---------------------------------------------------------------
   routers:
-    # Redirect all HTTP to HTTPS
+    # HTTP -> HTTPS redirect
     http-catchall:
       rule: "PathPrefix(`/`)"
       entryPoints:
@@ -84,6 +96,7 @@ http:
         - compress
 
     # Speed Test - forced HTTP/1.1 via h1only TLS option
+    # HTTP/1.1 is required for accurate speed test results (HTTP/2 multiplexing inflates speeds)
     speedtest:
       rule: "Host(`{{SPEEDTEST_HOSTNAME}}`)"
       entryPoints:
@@ -93,7 +106,7 @@ http:
         certResolver: letsencrypt
         options: h1only
       middlewares:
-        - security-headers
+        - speedtest-security-headers
         - speedtest-headers
 
   # --- Services --------------------------------------------------------------
@@ -113,5 +126,7 @@ http:
     # OpenSpeedTest (nginx)
     speedtest:
       loadBalancer:
+        responseForwarding:
+          flushInterval: "-1ms"
         servers:
           - url: "http://localhost:{{SPEEDTEST_PORT}}"
