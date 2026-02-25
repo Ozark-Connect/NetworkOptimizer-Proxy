@@ -21,7 +21,7 @@ fi
 
 # Create dynamic config from example if it doesn't exist
 if [ ! -f "$PROJECT_DIR/dynamic/config.yml" ]; then
-    cp "$PROJECT_DIR/dynamic/config.example.yml" "$PROJECT_DIR/dynamic/config.yml"
+    cp "$PROJECT_DIR/config.example.yml" "$PROJECT_DIR/dynamic/config.yml"
     echo "Created dynamic/config.yml from template - edit hostnames:"
     echo "  nano $PROJECT_DIR/dynamic/config.yml"
 else
@@ -30,7 +30,7 @@ fi
 
 # Create secrets config from example if it doesn't exist
 if [ ! -f "$PROJECT_DIR/dynamic/secrets.yml" ]; then
-    cp "$PROJECT_DIR/dynamic/secrets.example.yml" "$PROJECT_DIR/dynamic/secrets.yml"
+    cp "$PROJECT_DIR/secrets.example.yml" "$PROJECT_DIR/dynamic/secrets.yml"
     echo "Created dynamic/secrets.yml from template (optional)"
 else
     echo "dynamic/secrets.yml already exists, skipping"

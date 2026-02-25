@@ -51,7 +51,7 @@ docker compose up -d
 Copy from the example and update hostnames:
 
 ```bash
-cp dynamic/config.example.yml dynamic/config.yml
+cp config.example.yml dynamic/config.yml
 ```
 
 The example config includes two routers:
@@ -76,7 +76,7 @@ speedtest:
 Optional file for middleware that injects credentials (e.g., Basic Auth headers for backend services). Copy from example if needed:
 
 ```bash
-cp dynamic/secrets.example.yml dynamic/secrets.yml
+cp secrets.example.yml dynamic/secrets.yml
 ```
 
 This file is gitignored and managed directly on the host.

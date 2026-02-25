@@ -1,9 +1,8 @@
 # Secrets
 .env
 
-# Dynamic config (only examples are tracked)
+# Dynamic config (user-specific, not tracked)
 dynamic/*.yml
-!dynamic/*.example.yml
 
 # ACME certificate storage
 acme/
