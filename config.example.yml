@@ -33,7 +33,7 @@ http:
         stsSeconds: 31536000
         stsIncludeSubdomains: true
         stsPreload: true
-        frameDeny: true
+        customFrameOptionsValue: "SAMEORIGIN"
         contentTypeNosniff: true
         browserXssFilter: true
         customResponseHeaders:
