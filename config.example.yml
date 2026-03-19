@@ -123,6 +123,24 @@ http:
         - speedtest-security-headers
         - speedtest-headers
 
+    # WAN Speed Test - external OpenSpeedTest server for internet speed testing
+    # Same HTTP/1.1 + speed test config as the LAN speed test, but points to a
+    # remote server (VPS). Clients on your LAN test through this to measure WAN speed.
+    # Results post back to Network Optimizer automatically.
+    # See: https://github.com/Ozark-Connect/NetworkOptimizer/blob/main/docker/DEPLOYMENT.md
+    #
+    # speedtest-wan:
+    #   rule: "Host(`speedtest-wan.example.com`)"
+    #   entryPoints:
+    #     - websecure
+    #   service: speedtest-wan
+    #   tls:
+    #     certResolver: letsencrypt
+    #     options: h1only
+    #   middlewares:
+    #     - speedtest-security-headers
+    #     - speedtest-headers
+
   # --- Services --------------------------------------------------------------
   services:
     # Noop backend - Traefik's own ping endpoint (for redirects / cert-only domains)
@@ -144,3 +162,13 @@ http:
           flushInterval: "-1ms"
         servers:
           - url: "http://localhost:3005"
+
+    # WAN Speed Test - remote OpenSpeedTest server (uncomment to enable)
+    # Replace with the hostname or IP of your VPS running the speed test container
+    #
+    # speedtest-wan:
+    #   loadBalancer:
+    #     responseForwarding:
+    #       flushInterval: "-1ms"
+    #     servers:
+    #       - url: "http://your-vps-hostname:3005"
