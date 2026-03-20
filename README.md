@@ -40,9 +40,10 @@ The `windows/` directory contains the config templates used by the MSI build:
 - **For Linux**: Docker and Docker Compose
 - **For Windows**: Network Optimizer MSI installer (Traefik feature)
 - A domain with DNS managed by Cloudflare (for automatic Let's Encrypt certificates)
-- Two DNS A records pointing to the host running Traefik:
+- DNS A records pointing to the host running Traefik:
   - e.g. `optimizer.yourdomain.com` - Network Optimizer web UI
   - e.g. `speedtest.yourdomain.com` - OpenSpeedTest (HTTP/1.1)
+  - e.g. `speedtest-wan.yourdomain.com` - (optional) External WAN speed test server
 
 ## Configuration
 
@@ -64,10 +65,11 @@ Copy from the example and update hostnames:
 cp config.example.yml dynamic/config.yml
 ```
 
-The example config includes two routers:
+The example config includes routers for:
 
 - **optimizer** - Network Optimizer on HTTP/2 (default TLS)
 - **speedtest** - OpenSpeedTest on HTTP/1.1 (`h1only` TLS option)
+- **speedtest-wan** - (optional, commented out) External WAN speed test server on HTTP/1.1
 
 Edit the `Host()` rules to match your DNS:
 
@@ -128,6 +130,18 @@ Traefik uses Let's Encrypt with Cloudflare DNS-01 challenges, so:
 
 By default, DNS propagation checking is disabled (`disablepropagationcheck=true`) and replaced with a fixed 15-second delay. This avoids certificate failures caused by local DNS resolvers (Pi-hole, NextDNS, AdGuard Home, etc.) that may not see the Cloudflare TXT records during validation. Cloudflare's API is fast enough that 15 seconds is plenty.
 
+## WAN Speed Test Server (Optional)
+
+If you deploy an external OpenSpeedTest server to a VPS for [Client WAN Speed Testing](https://github.com/Ozark-Connect/NetworkOptimizer/blob/main/docker/DEPLOYMENT.md#external-wan-speed-test-server-optional), you can proxy it through this same Traefik instance. This gives you HTTPS (required for browser Private Network Access) and HTTP/1.1 (required for accurate results) without installing anything extra on the VPS.
+
+1. Deploy the speed test container on your VPS (see the Network Optimizer deployment guide)
+2. Add a DNS A record for `speedtest-wan.yourdomain.com` pointing to **the host running Traefik** (not the VPS)
+3. Uncomment the `speedtest-wan` router and service in `dynamic/config.yml`
+4. Update the service URL to point to your VPS: `http://your-vps-hostname-or-ip:3005`
+5. In Network Optimizer Settings, configure the External Speed Test Server with `https` scheme and the `speedtest-wan.yourdomain.com` hostname
+
+Traffic flows: browser → Traefik (HTTPS/HTTP1.1) → VPS:3005 (HTTP). Traefik handles TLS termination and HTTP/1.1 enforcement. The VPS only needs port 3005 open and Docker.
+
 ## Adding More Services
 
 To proxy additional services behind Traefik, add routers and services to `dynamic/config.yml`. Example:
@@ -183,6 +197,8 @@ Internet
     |-- optimizer.example.com (HTTP/2, default TLS)  -->  localhost:8042
     |
     |-- speedtest.example.com (HTTP/1.1, h1only TLS) -->  localhost:3005
+    |
+    |-- speedtest-wan.example.com (HTTP/1.1, h1only) -->  your-vps:3005  (optional)
     |
     |-- (other services...)
     |
