@@ -128,7 +128,7 @@ Traefik uses Let's Encrypt with Cloudflare DNS-01 challenges, so:
 - Wildcard certificates are supported
 - Certificates auto-renew before expiry
 
-By default, DNS propagation checking is disabled (`disablepropagationcheck=true`) and replaced with a fixed 15-second delay. This avoids certificate failures caused by local DNS resolvers (Pi-hole, NextDNS, AdGuard Home, etc.) that may not see the Cloudflare TXT records during validation. Cloudflare's API is fast enough that 15 seconds is plenty.
+By default, DNS propagation checking is disabled (`disablepropagationcheck=true`) and replaced with a fixed 20-second delay. This avoids certificate failures caused by local DNS resolvers (Pi-hole, NextDNS, AdGuard Home, etc.) that may not see the Cloudflare TXT records during validation. Cloudflare's API is fast enough that 20 seconds is plenty.
 
 ## WAN Speed Test Server (Optional)
 
