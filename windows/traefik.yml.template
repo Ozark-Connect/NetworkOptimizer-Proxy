@@ -29,8 +29,9 @@ certificatesResolvers:
         resolvers:
           - "1.1.1.1:53"
           - "1.0.0.1:53"
-        delayBeforeCheck: 15
-        disablePropagationCheck: true
+        propagation:
+          delayBeforeChecks: 20
+          disableChecks: true
 
 # --- Ping (noop backend for redirects / cert-only domains) ---
 ping: true

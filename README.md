@@ -128,7 +128,7 @@ Traefik uses Let's Encrypt with Cloudflare DNS-01 challenges, so:
 - Wildcard certificates are supported
 - Certificates auto-renew before expiry
 
-By default, DNS propagation checking is disabled (`disablepropagationcheck=true`) and replaced with a fixed 20-second delay. This avoids certificate failures caused by local DNS resolvers (Pi-hole, NextDNS, AdGuard Home, etc.) that may not see the Cloudflare TXT records during validation. Cloudflare's API is fast enough that 20 seconds is plenty.
+By default, DNS propagation checking is disabled (`propagation.disablechecks=true`) and replaced with a fixed 20-second delay. This avoids certificate failures caused by local DNS resolvers (Pi-hole, NextDNS, AdGuard Home, etc.) that may not see the Cloudflare TXT records during validation. Cloudflare's API is fast enough that 20 seconds is plenty.
 
 ## WAN Speed Test Server (Optional)
 
@@ -224,7 +224,7 @@ docker run --rm -v ./acme:/acme ldez/traefik-certs-dumper file \
 
 ## Troubleshooting
 
-**Certificates not issuing**: Check that your Cloudflare API token has Zone:DNS:Edit permissions and that the domain's DNS is managed by Cloudflare. Check logs with `docker compose logs`. If you see NXDOMAIN or propagation timeout errors, your local DNS resolver may be interfering - the default config already handles this, but you can increase `delaybeforecheck` in `docker-compose.yml` if needed.
+**Certificates not issuing**: Check that your Cloudflare API token has Zone:DNS:Edit permissions and that the domain's DNS is managed by Cloudflare. Check logs with `docker compose logs`. If you see NXDOMAIN or propagation timeout errors, your local DNS resolver may be interfering - the default config already handles this, but you can increase `propagation.delaybeforechecks` in `docker-compose.yml` if needed.
 
 **Speed test still using HTTP/2**: Verify the speed test router references `options: h1only` in its TLS config. Check with: `curl -v https://speedtest.yourdomain.com 2>&1 | grep ALPN`.
 
