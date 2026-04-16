@@ -1,0 +1,52 @@
+# Traefik Static Configuration (macOS native install)
+#
+# Location on target: /usr/local/etc/traefik/traefik.yml
+#
+# Replace placeholders before deploying:
+#   {{ACME_EMAIL}}  - Let's Encrypt registration email
+#   {{LOG_LEVEL}}   - DEBUG, INFO, WARN, ERROR (default: INFO)
+
+# --- Entrypoints ---
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+  traefik:
+    address: "127.0.0.1:8099"
+
+# --- File provider (dynamic config) ---
+providers:
+  file:
+    directory: "/usr/local/etc/traefik/dynamic/"
+    watch: true
+
+# --- Let's Encrypt (DNS-01 via Cloudflare) ---
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "{{ACME_EMAIL}}"
+      storage: "/usr/local/etc/traefik/acme/acme.json"
+      dnsChallenge:
+        provider: cloudflare
+        resolvers:
+          - "1.1.1.1:53"
+          - "1.0.0.1:53"
+        propagation:
+          delayBeforeChecks: 20
+          disableChecks: true
+
+# --- Ping (noop backend for redirects / cert-only domains) ---
+ping: true
+
+# --- API ---
+api:
+  dashboard: false
+
+# --- Logging ---
+log:
+  level: "{{LOG_LEVEL}}"
+
+accessLog:
+  filePath: "/usr/local/var/log/traefik/access.log"
+  bufferingSize: 100
