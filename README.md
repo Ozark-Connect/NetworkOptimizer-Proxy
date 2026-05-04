@@ -52,7 +52,7 @@ The `windows/` directory contains the config templates used by the MSI build:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ACME_EMAIL` | Yes | - | Email for Let's Encrypt registration |
-| `CF_DNS_API_TOKEN` | Yes | - | Cloudflare API token with Zone:DNS:Edit permissions |
+| `CF_DNS_API_TOKEN` | Yes | - | Cloudflare **User API Token** (created under [My Profile > API Tokens](https://dash.cloudflare.com/profile/api-tokens)) with `Zone:Read` and `DNS:Edit` permissions. Account API Tokens (`cfat_` prefix) are not compatible — you need a User API Token (`cfut_` prefix). |
 | `LISTEN_IP` | No | `0.0.0.0` | Bind to a specific IP address |
 | `DNS_RESOLVERS` | No | `1.1.1.1:53,1.0.0.1:53` | DNS servers for ACME DNS-01 validation. Override on hosts where the default resolvers are unreachable (e.g., `127.0.0.1:53` on a Pi-hole host that can't DNAT its own traffic to external DNS). |
 | `LOG_LEVEL` | No | `INFO` | Log verbosity: DEBUG, INFO, WARN, ERROR |
@@ -224,7 +224,7 @@ docker run --rm -v ./acme:/acme ldez/traefik-certs-dumper file \
 
 ## Troubleshooting
 
-**Certificates not issuing**: Check that your Cloudflare API token has Zone:DNS:Edit permissions and that the domain's DNS is managed by Cloudflare. Check logs with `docker compose logs`. If you see NXDOMAIN or propagation timeout errors, your local DNS resolver may be interfering - the default config already handles this, but you can increase `propagation.delaybeforechecks` in `docker-compose.yml` if needed.
+**Certificates not issuing**: Check that your Cloudflare API token is a **User API Token** (created under My Profile > API Tokens, `cfut_` prefix) with `Zone:Read` and `DNS:Edit` permissions. Account API Tokens (`cfat_` prefix) will not work. Verify the domain's DNS is managed by Cloudflare and check logs with `docker compose logs`. If you see NXDOMAIN or propagation timeout errors, your local DNS resolver may be interfering - the default config already handles this, but you can increase `propagation.delaybeforechecks` in `docker-compose.yml` if needed.
 
 **Speed test still using HTTP/2**: Verify the speed test router references `options: h1only` in its TLS config. Check with: `curl -v https://speedtest.yourdomain.com 2>&1 | grep ALPN`.
 
