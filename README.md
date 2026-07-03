@@ -142,6 +142,23 @@ If you deploy an external OpenSpeedTest server to a VPS for [Client WAN Speed Te
 
 Traffic flows: browser → Traefik (HTTPS/HTTP1.1) → VPS:3005 (HTTP). Traefik handles TLS termination and HTTP/1.1 enforcement. The VPS only needs port 3005 open and Docker.
 
+## Multi-Site (On-Site Agents) (Optional)
+
+If you enable Network Optimizer's [multi-site management](https://github.com/Ozark-Connect/NetworkOptimizer), each remote site runs an on-site agent that dials home over a long-lived gRPC tunnel to this instance. The tunnel uses the **same hostname as the app**, split off by the gRPC service path (`/networkoptimizer.agent.v1.AgentTunnel/`), and connects to the app's plaintext-HTTP/2 (**h2c**) listener on port **8043**.
+
+The app only opens the `8043` listener **when multi-site is enabled** (and after a restart), so this route ships commented out. Enable it like this:
+
+1. In Network Optimizer, turn on multi-site management and **restart the app** (this binds the `8043` listener).
+2. Uncomment the `agents` router **and** service in `dynamic/config.yml`.
+3. The `agents` router reuses your existing app hostname, so no new DNS record is needed.
+
+Notes:
+
+- The `websecure` entrypoint ships with `readTimeout: 0`, which is required so the long-lived tunnel isn't severed at Traefik v3's default 60-second read deadline.
+- Until the `8043` listener is up, an active `agents` route returns **502** on that path, which is why it stays commented until multi-site is on.
+
+Traffic flows: agent → Traefik (HTTPS/HTTP2) → app:8043 (h2c gRPC).
+
 ## Adding More Services
 
 To proxy additional services behind Traefik, add routers and services to `dynamic/config.yml`. Example:

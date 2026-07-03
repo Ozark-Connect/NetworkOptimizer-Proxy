@@ -9,6 +9,12 @@ entryPoints:
     address: "{{LISTEN_IP}}:80"
   websecure:
     address: "{{LISTEN_IP}}:443"
+    # Disable the v3 default 60s readTimeout: it sets a one-shot read deadline at
+    # connection setup, which severs long-lived gRPC/streaming connections (e.g. the
+    # multi-site agent tunnel) at exactly 60s. 0 = no timeout.
+    transport:
+      respondingTimeouts:
+        readTimeout: 0
   traefik:
     address: "127.0.0.1:8099"
 

@@ -141,6 +141,29 @@ http:
     #     - speedtest-security-headers
     #     - speedtest-headers
 
+    # Site Agents (multi-site only) - uncomment to enable
+    # If you turn on Network Optimizer's multi-site management, each remote site
+    # runs an on-site agent that dials home over a long-lived gRPC tunnel. It uses
+    # the SAME hostname as the app, split off by the gRPC service path, and points
+    # at the app's plaintext-HTTP/2 (h2c) listener on port 8043.
+    #
+    # IMPORTANT: the app only opens the 8043 listener when multi-site is enabled
+    # (and after a restart), so leave this commented until then - an active route
+    # to a listener that isn't up returns 502 on that path. Needs readTimeout: 0
+    # on the websecure entrypoint (already set in the shipped Traefik config) so
+    # the long-lived tunnel isn't severed at 60s.
+    #
+    # agents:
+    #   rule: "Host(`optimizer.example.com`) && PathPrefix(`/networkoptimizer.agent.v1.AgentTunnel/`)"
+    #   priority: 100        # must beat the host-only optimizer router so the path wins
+    #   entryPoints:
+    #     - websecure
+    #   service: agents
+    #   tls:
+    #     certResolver: letsencrypt
+    #   middlewares:
+    #     - security-headers
+
   # --- Services --------------------------------------------------------------
   services:
     # Noop backend - Traefik's own ping endpoint (for redirects / cert-only domains)
@@ -172,3 +195,12 @@ http:
     #       flushInterval: "-1ms"
     #     servers:
     #       - url: "http://your-vps-hostname:3005"
+
+    # Site agent tunnel - gRPC over h2c (plaintext HTTP/2) to the app's 8043
+    # listener. h2c (not https) because that listener is not TLS. Uncomment
+    # together with the agents router above.
+    #
+    # agents:
+    #   loadBalancer:
+    #     servers:
+    #       - url: "h2c://127.0.0.1:8043"
