@@ -12,6 +12,10 @@ services:
       # --- Entrypoints ---
       - "--entrypoints.web.address=${LISTEN_IP:-0.0.0.0}:80"
       - "--entrypoints.websecure.address=${LISTEN_IP:-0.0.0.0}:443"
+      # Disable the v3 default 60s readTimeout: it sets a one-shot read deadline
+      # at connection setup, which kills long-lived gRPC/streaming connections at
+      # exactly 60s. 0 = no timeout.
+      - "--entrypoints.websecure.transport.respondingtimeouts.readtimeout=0"
       - "--entrypoints.traefik.address=127.0.0.1:${TRAEFIK_API_PORT:-8099}"
 
       # --- File provider (dynamic config) ---
