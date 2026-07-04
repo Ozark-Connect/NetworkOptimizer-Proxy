@@ -145,7 +145,10 @@ http:
     # If you turn on Network Optimizer's multi-site management, each remote site
     # runs an on-site agent that dials home over a long-lived gRPC tunnel. It uses
     # the SAME hostname as the app, split off by the gRPC service path, and points
-    # at the app's plaintext-HTTP/2 (h2c) listener on port 8043.
+    # at the app's HTTP/2 listener on port 8043. That listener serves TLS with an
+    # ephemeral self-signed cert, so the backend is https:// with verification
+    # skipped (see the serversTransport below) - this keeps the proxy-to-app hop
+    # encrypted when Traefik runs on a separate box from the app.
     #
     # IMPORTANT: the app only opens the 8043 listener when multi-site is enabled
     # (and after a restart), so leave this commented until then - an active route
@@ -196,11 +199,22 @@ http:
     #     servers:
     #       - url: "http://your-vps-hostname:3005"
 
-    # Site agent tunnel - gRPC over h2c (plaintext HTTP/2) to the app's 8043
-    # listener. h2c (not https) because that listener is not TLS. Uncomment
-    # together with the agents router above.
+    # Site agent tunnel - gRPC over HTTP/2 to the app's 8043 listener. The
+    # listener serves TLS with an ephemeral self-signed cert, so the backend URL
+    # is https:// and verification is skipped via the serversTransport below.
+    # Uncomment together with the agents router above.
     #
     # agents:
     #   loadBalancer:
     #     servers:
-    #       - url: "h2c://127.0.0.1:8043"
+    #       - url: "https://127.0.0.1:8043"
+    #     serversTransport: agent-tunnel-insecure
+
+  # --- ServersTransports -------------------------------------------------------
+  # Backend transport tuning. The agent tunnel's self-signed cert requires
+  # skipping verification on the proxy-to-app hop. Uncomment together with the
+  # agents router and service above.
+  #
+  # serversTransports:
+  #   agent-tunnel-insecure:
+  #     insecureSkipVerify: true

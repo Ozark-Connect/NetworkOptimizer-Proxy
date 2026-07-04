@@ -111,7 +111,9 @@ http:
 
     # Site Agents (multi-site only) - uncomment to enable
     # Long-lived gRPC tunnel for on-site agents when multi-site is enabled. Shares
-    # the app's hostname, split by the gRPC path, to the app's h2c listener on 8043.
+    # the app's hostname, split by the gRPC path, to the app's HTTP/2 listener on
+    # 8043. That listener serves TLS with an ephemeral self-signed cert, so the
+    # backend is https:// with verification skipped (see serversTransport below).
     # The 8043 listener only binds when multi-site is on (after a restart), so leave
     # this commented until then. Needs readTimeout: 0 on websecure (already set).
     #
@@ -148,8 +150,16 @@ http:
         servers:
           - url: "http://localhost:{{SPEEDTEST_PORT}}"
 
-    # Site agent tunnel - gRPC over h2c to the app's 8043 listener (uncomment with router)
+    # Site agent tunnel - gRPC over TLS (self-signed) to the app's 8043 listener (uncomment with router)
     # agents:
     #   loadBalancer:
     #     servers:
-    #       - url: "h2c://127.0.0.1:8043"
+    #       - url: "https://127.0.0.1:8043"
+    #     serversTransport: agent-tunnel-insecure
+
+  # --- ServersTransports -------------------------------------------------------
+  # Skip verification of the agent tunnel's self-signed cert (uncomment with the
+  # agents router and service above).
+  # serversTransports:
+  #   agent-tunnel-insecure:
+  #     insecureSkipVerify: true
