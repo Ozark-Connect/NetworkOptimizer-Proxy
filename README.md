@@ -146,17 +146,16 @@ Traffic flows: browser → Traefik (HTTPS/HTTP1.1) → VPS:3005 (HTTP). Traefik 
 
 If you enable Network Optimizer's [multi-site management](https://github.com/Ozark-Connect/NetworkOptimizer), each remote site runs an on-site agent that dials home over a long-lived gRPC tunnel to this instance. The tunnel uses the **same hostname as the app**, split off by the gRPC service path (`/networkoptimizer.agent.v1.AgentTunnel/`), and connects to the app's HTTP/2 listener on port **8043**. That listener serves TLS with an ephemeral self-signed cert, so the backend is `https://` with verification skipped - this keeps the proxy-to-app hop encrypted even when Traefik runs on a separate box from the app.
 
-The app only opens the `8043` listener **when multi-site is enabled** (and after a restart), so this route ships commented out. Enable it like this:
+This route **ships enabled** because it's a no-op without agents: the app only opens the `8043` listener **when multi-site is enabled** (and after a restart), and nothing hits the gRPC path until an agent enrolls, so the backend is never dialed. To actually use it:
 
 1. In Network Optimizer, turn on multi-site management and **restart the app** (this binds the `8043` listener).
-2. Uncomment the `agents` router, service, **and** the `agent-tunnel-insecure` `serversTransport` in `dynamic/config.yml`.
-3. The `agents` router reuses your existing app hostname, so no new DNS record is needed.
+2. That's it - the `agents` router reuses your existing app hostname, so no new DNS record and no config edit are needed.
 
 Notes:
 
 - The `websecure` entrypoint ships with `readTimeout: 0`, which is required so the long-lived tunnel isn't severed at Traefik v3's default 60-second read deadline.
 - The `insecureSkipVerify` on the `agent-tunnel-insecure` serversTransport is expected: the tunnel listener's cert is a throwaway self-signed cert regenerated on every app start, so it can't be pinned. Confidentiality on the hop is the goal, not backend authentication.
-- Until the `8043` listener is up, an active `agents` route returns **502** on that path, which is why it stays commented until multi-site is on.
+- If you enable multi-site but haven't restarted the app yet, an agent hitting the path gets a **502** until the `8043` listener binds. Without any agents, the path is simply never requested.
 
 Traffic flows: agent → Traefik (HTTPS/HTTP2) → app:8043 (self-signed TLS, HTTP/2 gRPC).
 

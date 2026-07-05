@@ -141,7 +141,7 @@ http:
     #     - speedtest-security-headers
     #     - speedtest-headers
 
-    # Site Agents (multi-site only) - uncomment to enable
+    # Site Agents (multi-site) - active by default; harmless with no agents.
     # If you turn on Network Optimizer's multi-site management, each remote site
     # runs an on-site agent that dials home over a long-lived gRPC tunnel. It uses
     # the SAME hostname as the app, split off by the gRPC service path, and points
@@ -150,22 +150,23 @@ http:
     # skipped (see the serversTransport below) - this keeps the proxy-to-app hop
     # encrypted when Traefik runs on a separate box from the app.
     #
-    # IMPORTANT: the app only opens the 8043 listener when multi-site is enabled
-    # (and after a restart), so leave this commented until then - an active route
-    # to a listener that isn't up returns 502 on that path. Needs readTimeout: 0
-    # on the websecure entrypoint (already set in the shipped Traefik config) so
-    # the long-lived tunnel isn't severed at 60s.
-    #
-    # agents:
-    #   rule: "Host(`optimizer.example.com`) && PathPrefix(`/networkoptimizer.agent.v1.AgentTunnel/`)"
-    #   priority: 100        # must beat the host-only optimizer router so the path wins
-    #   entryPoints:
-    #     - websecure
-    #   service: agents
-    #   tls:
-    #     certResolver: letsencrypt
-    #   middlewares:
-    #     - security-headers
+    # This route ships enabled because it's a no-op without agents: the app only
+    # opens the 8043 listener when multi-site is enabled (and after a restart), and
+    # nothing hits this path until an agent enrolls, so the backend is never dialed.
+    # If you DO enable multi-site, restart the app so the 8043 listener binds (until
+    # it does, this path returns 502). Requires readTimeout: 0 on the websecure
+    # entrypoint (already set in the shipped Traefik config) so the tunnel isn't
+    # severed at 60s.
+    agents:
+      rule: "Host(`optimizer.example.com`) && PathPrefix(`/networkoptimizer.agent.v1.AgentTunnel/`)"
+      priority: 100        # must beat the host-only optimizer router so the path wins
+      entryPoints:
+        - websecure
+      service: agents
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - security-headers
 
   # --- Services --------------------------------------------------------------
   services:
@@ -202,19 +203,15 @@ http:
     # Site agent tunnel - gRPC over HTTP/2 to the app's 8043 listener. The
     # listener serves TLS with an ephemeral self-signed cert, so the backend URL
     # is https:// and verification is skipped via the serversTransport below.
-    # Uncomment together with the agents router above.
-    #
-    # agents:
-    #   loadBalancer:
-    #     servers:
-    #       - url: "https://127.0.0.1:8043"
-    #     serversTransport: agent-tunnel-insecure
+    agents:
+      loadBalancer:
+        servers:
+          - url: "https://127.0.0.1:8043"
+        serversTransport: agent-tunnel-insecure
 
   # --- ServersTransports -------------------------------------------------------
   # Backend transport tuning. The agent tunnel's self-signed cert requires
-  # skipping verification on the proxy-to-app hop. Uncomment together with the
-  # agents router and service above.
-  #
-  # serversTransports:
-  #   agent-tunnel-insecure:
-  #     insecureSkipVerify: true
+  # skipping verification on the proxy-to-app hop.
+  serversTransports:
+    agent-tunnel-insecure:
+      insecureSkipVerify: true
