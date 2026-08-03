@@ -109,24 +109,29 @@ http:
         - speedtest-security-headers
         - speedtest-headers
 
-    # Site Agents (multi-site only) - uncomment to enable
+    # Site Agents (multi-site) - active by default; harmless with no agents.
     # Long-lived gRPC tunnel for on-site agents when multi-site is enabled. Shares
     # the app's hostname, split by the gRPC path, to the app's HTTP/2 listener on
-    # 8043. That listener serves TLS with an ephemeral self-signed cert, so the
-    # backend is https:// with verification skipped (see serversTransport below).
-    # The 8043 listener only binds when multi-site is on (after a restart), so leave
-    # this commented until then. Needs readTimeout: 0 on websecure (already set).
+    # the tunnel port. That listener serves TLS with an ephemeral self-signed cert,
+    # so the backend is https:// with verification skipped (see serversTransport
+    # below). Needs readTimeout: 0 on websecure (already set).
     #
-    # agents:
-    #   rule: "Host(`{{OPTIMIZER_HOSTNAME}}`) && PathPrefix(`/networkoptimizer.agent.v1.AgentTunnel/`)"
-    #   priority: 100
-    #   entryPoints:
-    #     - websecure
-    #   service: agents
-    #   tls:
-    #     certResolver: letsencrypt
-    #   middlewares:
-    #     - security-headers
+    # Deliberately carries NO middlewares: compression breaks gRPC streaming, and
+    # browser security headers are meaningless on a machine-to-machine tunnel.
+    # Priority must beat the host-only optimizer router so the path wins.
+    #
+    # This ships enabled because it is a no-op without agents: the listener only
+    # binds when multi-site is on (after a restart), and nothing requests this path
+    # until an agent enrolls, so the backend is never dialed. If multi-site is on
+    # but the app has not been restarted yet, this path returns 502 until it is.
+    agents:
+      rule: "Host(`{{OPTIMIZER_HOSTNAME}}`) && PathPrefix(`/networkoptimizer.agent.v1.AgentTunnel/`)"
+      priority: 100
+      entryPoints:
+        - websecure
+      service: agents
+      tls:
+        certResolver: letsencrypt
 
   # --- Services --------------------------------------------------------------
   services:
@@ -150,16 +155,17 @@ http:
         servers:
           - url: "http://localhost:{{SPEEDTEST_PORT}}"
 
-    # Site agent tunnel - gRPC over TLS (self-signed) to the app's 8043 listener (uncomment with router)
-    # agents:
-    #   loadBalancer:
-    #     servers:
-    #       - url: "https://127.0.0.1:8043"
-    #     serversTransport: agent-tunnel-insecure
+    # Site agent tunnel - gRPC over TLS (self-signed) to the app's tunnel listener
+    agents:
+      loadBalancer:
+        servers:
+          - url: "https://localhost:{{TUNNEL_PORT}}"
+        serversTransport: agent-tunnel-insecure
 
   # --- ServersTransports -------------------------------------------------------
-  # Skip verification of the agent tunnel's self-signed cert (uncomment with the
-  # agents router and service above).
-  # serversTransports:
-  #   agent-tunnel-insecure:
-  #     insecureSkipVerify: true
+  # Skip verification of the agent tunnel's self-signed cert. It is regenerated on
+  # every app start, so it cannot be pinned - confidentiality on the proxy-to-app
+  # hop is the goal here, not backend authentication.
+  serversTransports:
+    agent-tunnel-insecure:
+      insecureSkipVerify: true
