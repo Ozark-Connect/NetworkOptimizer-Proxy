@@ -13,7 +13,16 @@ set -euo pipefail
 #
 # Usage: bash add-agent-tunnel.sh [--dry-run] [--app-port N] [--tunnel-port N]
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Designed to run straight from a pipe:
+#   curl -fsSL .../add-agent-tunnel.sh | bash
+# so nothing here may assume a git checkout, a repo layout, or even a file on
+# disk. When piped, BASH_SOURCE is "bash" or /dev/stdin, hence the guard.
+SELF="${BASH_SOURCE[0]:-}"
+if [ -n "$SELF" ] && [ -f "$SELF" ]; then
+    PROJECT_DIR="$(cd "$(dirname "$SELF")" && pwd)"
+else
+    PROJECT_DIR=""
+fi
 CONFIG=""
 APP_PORT=8042
 TUNNEL_PORT=8043
@@ -26,7 +35,21 @@ while [ $# -gt 0 ]; do
         --app-port)    APP_PORT="${2:?}"; shift ;;
         --tunnel-port) TUNNEL_PORT="${2:?}"; shift ;;
         --config)      CONFIG="${2:?}"; shift ;;
-        --help|-h)     sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --help|-h)
+            cat <<'USAGE'
+add-agent-tunnel.sh - add the multi-site agent tunnel route to dynamic/config.yml
+
+Finds Network Optimizer by its backend port, reuses the hostname from the router
+already serving it, and inserts the gRPC router, service and serversTransport.
+Everything else in your config is left alone. Safe to re-run.
+
+  --dry-run         show the diff, write nothing
+  --config PATH     path to dynamic/config.yml (default: search the install dir,
+                    the current directory, then /opt/traefik)
+  --app-port N      app's backend port (default 8042)
+  --tunnel-port N   agent tunnel port (default 8043)
+USAGE
+            exit 0 ;;
         *) echo "Unknown option: $1 (try --help)" >&2; exit 3 ;;
     esac
     shift
@@ -43,17 +66,21 @@ echo ""
 # small enough to be curl'd on its own, so fall back to the working directory and
 # then to the documented /opt location before giving up.
 if [ -z "$CONFIG" ]; then
-    for dir in "$PROJECT_DIR" "$PWD" /opt/traefik /opt/networkoptimizer-proxy; do
+    SEARCHED=""
+    for dir in "$PROJECT_DIR" "$PWD" /opt/traefik /opt/networkoptimizer-proxy /opt/traefik-proxy; do
+        [ -n "$dir" ] || continue
+        case " $SEARCHED " in *" $dir "*) continue ;; esac
+        SEARCHED="$SEARCHED $dir"
         if [ -f "$dir/dynamic/config.yml" ]; then
             INSTALL_DIR="$dir"
             CONFIG="$dir/dynamic/config.yml"
             break
         fi
     done
-    [ -n "$CONFIG" ] || die "could not find dynamic/config.yml.
-  Looked in: $PROJECT_DIR, $PWD, /opt/traefik, /opt/networkoptimizer-proxy
+    [ -n "$CONFIG" ] || die "could not find dynamic/config.yml. Looked in:$(
+        for d in $SEARCHED; do printf '\n    %s' "$d"; done)
   Run this from your install directory, or pass --config /path/to/config.yml"
-    [ "$INSTALL_DIR" = "$PROJECT_DIR" ] || echo "Using install at: $INSTALL_DIR"
+    echo "Install: $INSTALL_DIR"
 else
     [ -f "$CONFIG" ] || die "$CONFIG not found."
     INSTALL_DIR="$(cd "$(dirname "$CONFIG")/.." && pwd)"
@@ -297,13 +324,19 @@ echo ""
 
 # The route alone isn't enough: Traefik v3's default 60s readTimeout severs the
 # tunnel. That setting lives in the static config, not here.
-if [ -f "$COMPOSE" ] && ! grep -q 'readtimeout=0' "$COMPOSE"; then
-    echo "ACTION NEEDED: docker-compose.yml is missing the readTimeout override."
-    echo "  Without it Traefik cuts the tunnel at exactly 60 seconds."
-    echo "  Run 'git pull' to get it, then 'docker compose up -d'."
+if [ ! -f "$COMPOSE" ]; then
+    echo "CHECK: no docker-compose.yml here, so make sure the entrypoint serving"
+    echo "  the tunnel has its read deadline cleared (Traefik v3 defaults to 60s"
+    echo "  and will sever the tunnel on that timer):"
+    echo "    --entrypoints.websecure.transport.respondingtimeouts.readtimeout=0"
+elif ! grep -qi 'readtimeout=0\|readTimeout: 0' "$COMPOSE"; then
+    echo "ACTION NEEDED: docker-compose.yml has no readTimeout override, so Traefik"
+    echo "  will cut the tunnel at exactly 60 seconds. Add to the traefik command:"
+    echo "    --entrypoints.websecure.transport.respondingtimeouts.readtimeout=0"
+    echo "  then: docker compose up -d"
 else
-    echo "readTimeout override present in docker-compose.yml."
-    echo "Traefik watches dynamic/ and picks this up automatically - no restart needed."
+    echo "readTimeout override present - Traefik watches dynamic/ and reloads on"
+    echo "its own, so no restart is needed."
 fi
 echo ""
 echo "Roll back with:  cp \"$BACKUP\" \"$CONFIG\""

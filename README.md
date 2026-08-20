@@ -156,10 +156,10 @@ This route **ships enabled** because it's a no-op without agents: the app only o
 `setup.sh` only copies `config.example.yml` on first run, so installs predating this route don't have it:
 
 ```bash
-git pull && bash add-agent-tunnel.sh
+curl -fsSL https://raw.githubusercontent.com/Ozark-Connect/NetworkOptimizer-Proxy/main/add-agent-tunnel.sh | bash
 ```
 
-It backs up `config.yml` first, and `--dry-run` shows the diff without writing.
+No git checkout needed. Run it from your install directory, or from anywhere if that's `/opt/traefik`. It backs up `config.yml` first; append `-s -- --dry-run` to preview instead of writing.
 
 Notes:
 
