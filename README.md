@@ -151,6 +151,16 @@ This route **ships enabled** because it's a no-op without agents: the app only o
 1. In Network Optimizer, turn on multi-site management and **restart the app** (this binds the `8043` listener).
 2. That's it - the `agents` router reuses your existing app hostname, so no new DNS record and no config edit are needed.
 
+### Existing installs
+
+`setup.sh` only copies `config.example.yml` on first run, so installs predating this route don't have it:
+
+```bash
+git pull && bash add-agent-tunnel.sh
+```
+
+It backs up `config.yml` first, and `--dry-run` shows the diff without writing.
+
 Notes:
 
 - The `websecure` entrypoint ships with `readTimeout: 0`, which is required so the long-lived tunnel isn't severed at Traefik v3's default 60-second read deadline.
