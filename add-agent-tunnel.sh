@@ -181,9 +181,9 @@ ROUTER_BLOCK="
     # off by the gRPC service path, and points at the app's HTTP/2 listener on
     # port $TUNNEL_PORT. That listener serves TLS with an ephemeral self-signed cert, so
     # the backend is https:// with verification skipped (see serversTransports).
-    # Harmless with no agents: the app only opens the $TUNNEL_PORT listener when multi-site
-    # is enabled (and after a restart), and nothing hits this path until an agent
-    # enrolls. Priority must beat the host-only app router so the path wins.
+    # Harmless with no agents: the app binds the $TUNNEL_PORT listener at startup, but
+    # nothing hits this path until an agent enrolls. Priority must beat the host-only
+    # app router so the path wins.
     $ROUTER_NAME:
       rule: \"Host(\`$APP_HOST\`) && PathPrefix(\`$GRPC_PATH\`)\"
       priority: 100

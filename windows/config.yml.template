@@ -120,10 +120,8 @@ http:
     # browser security headers are meaningless on a machine-to-machine tunnel.
     # Priority must beat the host-only optimizer router so the path wins.
     #
-    # This ships enabled because it is a no-op without agents: the listener only
-    # binds when multi-site is on (after a restart), and nothing requests this path
-    # until an agent enrolls, so the backend is never dialed. If multi-site is on
-    # but the app has not been restarted yet, this path returns 502 until it is.
+    # This ships enabled because it is a no-op without agents: the app binds the
+    # listener at startup, and nothing requests this path until an agent enrolls.
     agents:
       rule: "Host(`{{OPTIMIZER_HOSTNAME}}`) && PathPrefix(`/networkoptimizer.agent.v1.AgentTunnel/`)"
       priority: 100

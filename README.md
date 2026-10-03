@@ -147,10 +147,7 @@ Traffic flows: browser → Traefik (HTTPS/HTTP1.1) → VPS:3005 (HTTP). Traefik 
 
 If you enable Network Optimizer's [multi-site management](https://github.com/Ozark-Connect/NetworkOptimizer), each remote site runs an on-site agent that dials home over a long-lived gRPC tunnel to this instance. The tunnel uses the **same hostname as the app**, split off by the gRPC service path (`/networkoptimizer.agent.v1.AgentTunnel/`), and connects to the app's HTTP/2 listener on port **8043**. That listener serves TLS with an ephemeral self-signed cert, so the backend is `https://` with verification skipped - this keeps the proxy-to-app hop encrypted even when Traefik runs on a separate box from the app.
 
-This route **ships enabled** because it's a no-op without agents: the app only opens the `8043` listener **when multi-site is enabled** (and after a restart), and nothing hits the gRPC path until an agent enrolls, so the backend is never dialed. To actually use it:
-
-1. In Network Optimizer, turn on multi-site management and **restart the app** (this binds the `8043` listener).
-2. That's it - the `agents` router reuses your existing app hostname, so no new DNS record and no config edit are needed.
+This route **ships enabled** because it's a no-op without agents: the app binds the `8043` listener at startup, and nothing hits the gRPC path until an agent enrolls. To actually use it, turn on multi-site management in Network Optimizer. No app restart is needed, and the `agents` router reuses your existing app hostname, so no new DNS record and no config edit are needed either.
 
 ### Existing installs
 
@@ -166,7 +163,7 @@ Notes:
 
 - The `websecure` entrypoint ships with `readTimeout: 0`, which is required so the long-lived tunnel isn't severed at Traefik v3's default 60-second read deadline.
 - The `insecureSkipVerify` on the `agent-tunnel-insecure` serversTransport is expected: the tunnel listener's cert is a throwaway self-signed cert regenerated on every app start, so it can't be pinned. Confidentiality on the hop is the goal, not backend authentication.
-- If you enable multi-site but haven't restarted the app yet, an agent hitting the path gets a **502** until the `8043` listener binds. Without any agents, the path is simply never requested.
+- A **502** on the gRPC path means Traefik cannot reach the app's `8043` listener: check that the app is running and that nothing blocks the port between Traefik and the app.
 
 Traffic flows: agent → Traefik (HTTPS/HTTP2) → app:8043 (self-signed TLS, HTTP/2 gRPC).
 

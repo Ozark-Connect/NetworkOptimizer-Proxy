@@ -150,13 +150,10 @@ http:
     # skipped (see the serversTransport below) - this keeps the proxy-to-app hop
     # encrypted when Traefik runs on a separate box from the app.
     #
-    # This route ships enabled because it's a no-op without agents: the app only
-    # opens the 8043 listener when multi-site is enabled (and after a restart), and
-    # nothing hits this path until an agent enrolls, so the backend is never dialed.
-    # If you DO enable multi-site, restart the app so the 8043 listener binds (until
-    # it does, this path returns 502). Requires readTimeout: 0 on the websecure
-    # entrypoint (already set in the shipped Traefik config) so the tunnel isn't
-    # severed at 60s.
+    # This route ships enabled because it's a no-op without agents: the app binds
+    # the 8043 listener at startup, and nothing hits this path until an agent
+    # enrolls. Requires readTimeout: 0 on the websecure entrypoint (already set in
+    # the shipped Traefik config) so the tunnel isn't severed at 60s.
     agents:
       rule: "Host(`optimizer.example.com`) && PathPrefix(`/networkoptimizer.agent.v1.AgentTunnel/`)"
       priority: 100        # must beat the host-only optimizer router so the path wins
