@@ -56,6 +56,7 @@ The `windows/` directory contains the config templates used by the MSI build:
 | `LISTEN_IP` | No | `0.0.0.0` | Bind to a specific IP address |
 | `DNS_RESOLVERS` | No | `1.1.1.1:53,1.0.0.1:53` | DNS servers for ACME DNS-01 validation. Override on hosts where the default resolvers are unreachable (e.g., `127.0.0.1:53` on a Pi-hole host that can't DNAT its own traffic to external DNS). |
 | `ACME_PROPAGATION_DELAY` | No | `20` | Seconds to wait after creating the ACME TXT record before asking Let's Encrypt to validate. Raise it (e.g. `120`) if renewals intermittently fail with `Incorrect TXT record` / `No TXT record found` and then succeed on the next daily attempt. |
+| `FORWARDED_TRUSTED_IPS` | No | none | Comma-separated IPs/CIDRs of upstream proxies whose `X-Forwarded-*` headers Traefik keeps on the HTTPS entrypoint. Leave unset unless another proxy sits in front of Traefik. See [Behind Cloudflare or another proxy](#behind-cloudflare-or-another-proxy-optional). |
 | `LOG_LEVEL` | No | `INFO` | Log verbosity: DEBUG, INFO, WARN, ERROR |
 
 ### Dynamic Config (`dynamic/config.yml`)
@@ -166,6 +167,27 @@ Notes:
 - A **502** on the gRPC path means Traefik cannot reach the app's `8043` listener. Check that the app is running and that nothing blocks the port between Traefik and the app. If the app log says `Agent tunnel not bound`, the app's `ASPNETCORE_URLS` has an HTTPS or non-port binding, and the listener cannot start alongside it.
 
 Traffic flows: agent → Traefik (HTTPS/HTTP2) → app:8043 (self-signed TLS, HTTP/2 gRPC).
+
+## Behind Cloudflare or Another Proxy (Optional)
+
+By default Traefik trusts no upstream proxy. It drops any incoming `X-Forwarded-For` / `X-Forwarded-Host` and sets them from the connection itself. That is correct when clients connect to Traefik directly.
+
+When Traefik sits behind another proxy, such as Cloudflare's orange-cloud proxy, the connecting address is that proxy, not the client. List the proxy's addresses in `.env` so Traefik keeps the forwarded headers it adds:
+
+```bash
+# Cloudflare's published ranges: https://www.cloudflare.com/ips/
+FORWARDED_TRUSTED_IPS=173.245.48.0/20,103.21.244.0/22,...
+```
+
+Then recreate the container (`docker compose up -d`). This is static config, so it does not hot-reload.
+
+Notes:
+
+- **Anyone who can connect from a listed address chooses the client IP your app sees.** For Cloudflare that is any Cloudflare customer, so also limit the origin to your own zone, e.g. with [per-hostname Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/). Firewalling to Cloudflare's ranges alone does not do this.
+- Cloudflare's ranges change occasionally. Re-check the list when you update.
+- Network Optimizer applies its own trust setting on top: set `TRUSTED_PROXIES` and `TRUSTED_PROXY_HOPS` on the app (see its [`docker/.env.example`](https://github.com/Ozark-Connect/NetworkOptimizer/blob/main/docker/.env.example)) so it reads the client address through both hops.
+- Applies to the HTTPS entrypoint only. The HTTP entrypoint just redirects.
+- Docker only. The Windows and macOS static templates do not read this variable.
 
 ## Adding More Services
 

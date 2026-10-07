@@ -16,6 +16,9 @@ services:
       # at connection setup, which kills long-lived gRPC/streaming connections at
       # exactly 60s. 0 = no timeout.
       - "--entrypoints.websecure.transport.respondingtimeouts.readtimeout=0"
+      # Trust X-Forwarded-* only from these upstream proxies (e.g. Cloudflare's ranges).
+      # Empty = trust none, which is Traefik's default.
+      - "--entrypoints.websecure.forwardedheaders.trustedips=${FORWARDED_TRUSTED_IPS:-}"
       - "--entrypoints.traefik.address=127.0.0.1:${TRAEFIK_API_PORT:-8099}"
 
       # --- File provider (dynamic config) ---
