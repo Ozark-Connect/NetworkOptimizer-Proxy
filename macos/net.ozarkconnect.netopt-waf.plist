@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd job for netopt-waf (macOS native install)
+  Location on target: ~/Library/LaunchAgents/net.ozarkconnect.netopt-waf.plist
+  Load:   launchctl load ~/Library/LaunchAgents/net.ozarkconnect.netopt-waf.plist
+  Unload: launchctl unload ~/Library/LaunchAgents/net.ozarkconnect.netopt-waf.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>net.ozarkconnect.netopt-waf</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/usr/local/etc/netopt-waf/netopt-waf-wrapper.sh</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/netopt-waf.log</string>
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/netopt-waf.log</string>
+</dict>
+</plist>

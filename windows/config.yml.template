@@ -71,6 +71,14 @@ http:
         customRequestHeaders:
           Accept-Encoding: ""
 
+    # Web Application Firewall (netopt-waf, started by the service when TRAEFIK_WAF_MODE
+    # is detect or block). The optimizer router lists it only while netopt-waf is running.
+    waf:
+      forwardAuth:
+        address: "http://127.0.0.1:8044/check"
+        forwardBody: true
+        maxBodySize: 10485760
+
   # --- Routers ---------------------------------------------------------------
   routers:
     # HTTP -> HTTPS redirect
@@ -94,6 +102,7 @@ http:
       middlewares:
         - security-headers
         - compress
+        # {{WAF_MIDDLEWARE}}
 
     # Speed Test - forced HTTP/1.1 via h1only TLS option
     # HTTP/1.1 is required for accurate speed test results (HTTP/2 multiplexing inflates speeds)

@@ -217,7 +217,8 @@ Notes:
 - The client IP comes from the `X-Forwarded-For` header Traefik builds, so set `FORWARDED_TRUSTED_IPS` when Traefik sits behind Cloudflare (see above), or every event shows Cloudflare's address.
 - `/api/events` needs `WAF_API_TOKEN`. Without it the WAF still filters, but Network Optimizer cannot read its events.
 - Response bodies are never inspected: `forwardAuth` sees only the request.
-- Docker only for now. The Windows and macOS templates do not include it.
+- **Windows (MSI):** the Traefik feature ships `netopt-waf.exe`. Set the registry value `TRAEFIK_WAF_MODE` (string, `detect` or `block`) under `HKLM\SOFTWARE\Ozark Connect\Network Optimizer` and restart the Network Optimizer service. The service starts the WAF, puts it on the app's router, and connects Threat Intelligence to it. Exclusions go in `Traefik\waf-rules\` in the install folder.
+- **macOS (native):** build the binary (`cd waf && go build -o /usr/local/bin/netopt-waf .`), copy `macos/netopt-waf-wrapper.sh` and a `waf.env` to `/usr/local/etc/netopt-waf/`, load `macos/net.ozarkconnect.netopt-waf.plist` with `launchctl`, and uncomment `- waf` on the optimizer router.
 
 ## Adding More Services
 

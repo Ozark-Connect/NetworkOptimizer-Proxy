@@ -75,6 +75,15 @@ http:
         customRequestHeaders:
           Accept-Encoding: ""
 
+    # Web Application Firewall (netopt-waf via launchd, see net.ozarkconnect.netopt-waf.plist).
+    # Add "- waf" to a router to inspect it. While netopt-waf is down, that router answers 500.
+    # Never add it to the speedtest or agents routers.
+    waf:
+      forwardAuth:
+        address: "http://127.0.0.1:8044/check"
+        forwardBody: true
+        maxBodySize: 10485760
+
     # Restrict to LAN only (customize subnets for your network)
     lan-only:
       ipAllowList:
@@ -107,6 +116,7 @@ http:
         - security-headers
         - compress
         - lan-only
+        # - waf
 
     # Speed Test - forced HTTP/1.1 via h1only TLS option
     # HTTP/1.1 is required for accurate speed test results (HTTP/2 multiplexing inflates speeds)
