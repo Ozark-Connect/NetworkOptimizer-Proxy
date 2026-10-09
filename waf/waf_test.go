@@ -162,6 +162,10 @@ func TestStore_RingKeepsNewestAndCursorAdvances(t *testing.T) {
 	if page = s.Since(4, 1, ModeDetect, 1); len(page.Events) != 1 || page.Next != 5 {
 		t.Fatalf("limit: %+v", page)
 	}
+	// A cursor from a previous, longer-lived instance is past the end.
+	if page = s.Since(1_000_000, 100, ModeDetect, 1); len(page.Events) != 0 || page.Next != 6 {
+		t.Fatalf("past the end: %+v", page)
+	}
 }
 
 func TestLoadConfig_Validates(t *testing.T) {

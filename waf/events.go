@@ -110,6 +110,9 @@ func (s *Store) Since(from uint64, limit int, mode string, paranoia int) EventPa
 	if from < oldest {
 		from = oldest
 	}
+	if from > s.nextSeq {
+		from = s.nextSeq
+	}
 	events := make([]Event, 0, min(limit, int(s.nextSeq-from)))
 	seq := from
 	for ; seq < s.nextSeq && len(events) < limit; seq++ {
