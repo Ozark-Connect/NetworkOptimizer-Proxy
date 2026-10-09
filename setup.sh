@@ -36,6 +36,14 @@ else
     echo "dynamic/secrets.yml already exists, skipping"
 fi
 
+# Create WAF exclusion files from examples if they don't exist
+for f in before-crs.conf after-crs.conf; do
+    if [ ! -f "$PROJECT_DIR/waf-rules/$f" ]; then
+        cp "$PROJECT_DIR/waf-rules/$f.example" "$PROJECT_DIR/waf-rules/$f"
+        echo "Created waf-rules/$f from template (WAF exclusions, optional)"
+    fi
+done
+
 # Create acme directory and acme.json with correct permissions
 mkdir -p "$PROJECT_DIR/acme"
 if [ ! -f "$PROJECT_DIR/acme/acme.json" ]; then

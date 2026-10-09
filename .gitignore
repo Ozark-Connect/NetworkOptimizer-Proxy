@@ -7,6 +7,9 @@ CLAUDE.md
 # Dynamic config (user-specific, not tracked)
 dynamic/*.yml
 
+# WAF exclusions (user-specific, examples are tracked)
+waf-rules/*.conf
+
 # ACME certificate storage
 acme/
 
