@@ -1,0 +1,11 @@
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY *.go ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /netopt-waf .
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /netopt-waf /netopt-waf
+USER nonroot
+ENTRYPOINT ["/netopt-waf"]

@@ -56,5 +56,32 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Web Application Firewall (opt-in). Set COMPOSE_PROFILES=waf in .env to run it, then
+  # add the "waf" middleware to a router in dynamic/config.yml. See the README.
+  netopt-waf:
+    build: ./waf
+    image: netopt-waf:local
+    container_name: netopt-waf
+    restart: unless-stopped
+    network_mode: host
+    profiles: ["waf"]
+    environment:
+      WAF_LISTEN: ${WAF_LISTEN:-127.0.0.1:8044}
+      WAF_MODE: ${WAF_MODE:-detect}
+      WAF_PARANOIA: ${WAF_PARANOIA:-1}
+      WAF_API_TOKEN: ${WAF_API_TOKEN:-}
+    volumes:
+      - ./waf-rules:/etc/netopt-waf:ro
+    healthcheck:
+      test: ["CMD", "/netopt-waf", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   traefik-logs:

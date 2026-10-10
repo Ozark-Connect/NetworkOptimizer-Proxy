@@ -58,6 +58,11 @@ The `windows/` directory contains the config templates used by the MSI build:
 | `ACME_PROPAGATION_DELAY` | No | `20` | Seconds to wait after creating the ACME TXT record before asking Let's Encrypt to validate. Raise it (e.g. `120`) if renewals intermittently fail with `Incorrect TXT record` / `No TXT record found` and then succeed on the next daily attempt. |
 | `FORWARDED_TRUSTED_IPS` | No | none | Comma-separated IPs/CIDRs of upstream proxies whose `X-Forwarded-*` headers Traefik keeps on the HTTPS entrypoint. Leave unset unless another proxy sits in front of Traefik. See [Behind Cloudflare or another proxy](#behind-cloudflare-or-another-proxy-optional). |
 | `LOG_LEVEL` | No | `INFO` | Log verbosity: DEBUG, INFO, WARN, ERROR |
+| `COMPOSE_PROFILES` | No | none | `waf` runs the bundled web application firewall. See [Web Application Firewall](#web-application-firewall-optional). |
+| `WAF_MODE` | No | `detect` | `detect` logs attacks and lets them through; `block` answers 403. |
+| `WAF_PARANOIA` | No | `1` | OWASP CRS paranoia level, 1-4. Higher catches more and flags more legitimate traffic. |
+| `WAF_API_TOKEN` | No | none | Shared secret Network Optimizer uses to read WAF events. |
+| `WAF_LISTEN` | No | `127.0.0.1:8044` | WAF listen address. Change only if Network Optimizer runs on another host. |
 
 ### Dynamic Config (`dynamic/config.yml`)
 
@@ -189,6 +194,32 @@ Notes:
 - Applies to the HTTPS entrypoint only. The HTTP entrypoint just redirects.
 - Docker only. The Windows and macOS static templates do not read this variable.
 
+## Web Application Firewall (Optional)
+
+`netopt-waf` is a web application firewall built on [Coraza](https://coraza.io) and the [OWASP Core Rule Set](https://coreruleset.org) (CRS). Traefik asks it about each request on the routes you choose, through a `forwardAuth` middleware. It inspects the method, URI, headers, and body, and answers allow or block. Requests that cross the CRS anomaly threshold are kept for [Network Optimizer](https://github.com/Ozark-Connect/NetworkOptimizer), which shows them on Threat Intelligence next to the gateway's IPS events.
+
+It complements UniFi CyberSecure rather than replacing it: the gateway's IPS sees packets, and only the proxy that terminates TLS sees the decrypted request.
+
+1. In `.env`, set `COMPOSE_PROFILES=waf` and a `WAF_API_TOKEN` (`openssl rand -hex 32`).
+2. Run `bash setup.sh` once to create `waf-rules/before-crs.conf` and `waf-rules/after-crs.conf`, then `docker compose up -d`. The first start builds the image.
+3. Make sure `dynamic/config.yml` defines the `waf` middleware (copy it from `config.example.yml` on installs that predate it), then add `- waf` to a router's `middlewares`.
+4. In Network Optimizer, Settings - Security & Alerts - Web Application Firewall: URL `http://127.0.0.1:8044` (same host) and the token.
+
+It starts in `detect` mode: attacks are logged and let through. Run it that way for a while, add exclusions for anything legitimate it flags, and then set `WAF_MODE=block` and `docker compose up -d netopt-waf`.
+
+Exclusions go in `waf-rules/`: runtime exclusions (`ctl:ruleRemoveById`, scoped to a host or path) in `before-crs.conf`, and rule removals (`SecRuleRemoveById`, `SecRuleUpdateTargetById`) in `after-crs.conf`. Restart `netopt-waf` after editing. Each event lists the CRS rule IDs that fired, so the ID to exclude is in Network Optimizer's event detail.
+
+Notes:
+
+- **It fails closed.** While `netopt-waf` is down, every router that lists the `waf` middleware answers 500. Add it to the routes you want protected, not to everything.
+- **Never add it to the `speedtest` or `agents` routers.** Traefik buffers a request body before asking the WAF, which breaks speed tests and long-lived streams.
+- Traefik answers **401** to a request whose body is larger than the middleware's `maxBodySize` (10 MB in the example), before the WAF sees it. Raise it for upload-heavy apps.
+- The client IP comes from the `X-Forwarded-For` header Traefik builds, so set `FORWARDED_TRUSTED_IPS` when Traefik sits behind Cloudflare (see above), or every event shows Cloudflare's address.
+- `/api/events` needs `WAF_API_TOKEN`. Without it the WAF still filters, but Network Optimizer cannot read its events.
+- Response bodies are never inspected: `forwardAuth` sees only the request.
+- **Windows (MSI):** the Traefik feature ships `netopt-waf.exe`. Set the registry value `TRAEFIK_WAF_MODE` (string, `detect` or `block`) under `HKLM\SOFTWARE\Ozark Connect\Network Optimizer` and restart the Network Optimizer service. The service starts the WAF, puts it on the app's router, and connects Threat Intelligence to it. Exclusions go in `Traefik\waf-rules\` in the install folder.
+- **macOS (native):** build the binary (`cd waf && go build -o /usr/local/bin/netopt-waf .`), copy `macos/netopt-waf-wrapper.sh` and a `waf.env` to `/usr/local/etc/netopt-waf/`, load `macos/net.ozarkconnect.netopt-waf.plist` with `launchctl`, and uncomment `- waf` on the optimizer router.
+
 ## Adding More Services
 
 To proxy additional services behind Traefik, add routers and services to `dynamic/config.yml`. Example:
@@ -276,6 +307,10 @@ docker run --rm -v ./acme:/acme ldez/traefik-certs-dumper file \
 **Speed test still using HTTP/2**: Verify the speed test router references `options: h1only` in its TLS config. Check with: `curl -v https://speedtest.yourdomain.com 2>&1 | grep ALPN`.
 
 **Port conflict**: If another service (e.g., Caddy) is already using port 443, set `LISTEN_IP` in `.env` to bind Traefik to a specific IP address.
+
+**500 on every request to a route**: The route lists the `waf` middleware and `netopt-waf` is not running. Check with `docker compose ps netopt-waf` and `docker compose logs netopt-waf`.
+
+**WAF blocking a legitimate request**: Find its rule IDs in Network Optimizer's Threat Intelligence or in `docker compose logs netopt-waf`, and add an exclusion in `waf-rules/` (see Web Application Firewall above).
 
 ## License
 
