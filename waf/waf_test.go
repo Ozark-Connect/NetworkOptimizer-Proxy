@@ -84,6 +84,15 @@ func TestPathTraversal_BlockMode_Blocks(t *testing.T) {
 	}
 }
 
+func TestCleanPost_NoEvent(t *testing.T) {
+	// net/http keeps Content-Length out of r.Header; a missing one trips CRS 920180 on any POST.
+	body := "name=" + strings.Repeat("x", 500_000)
+	v := engineFor(t, ModeBlock).Inspect(forwardAuth("POST", "/settings", body))
+	if v.Blocked || v.Event != nil {
+		t.Fatalf("clean POST flagged: blocked=%v event=%+v", v.Blocked, v.Event)
+	}
+}
+
 func TestBodyIsInspected(t *testing.T) {
 	v := engineFor(t, ModeDetect).Inspect(forwardAuth("POST", "/login", "user=admin&pass=1%27%20UNION%20SELECT%20password%20FROM%20users--"))
 	if v.Event == nil || !hasTag(v.Event, "attack-sqli") {

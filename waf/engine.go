@@ -115,6 +115,13 @@ func (e *Engine) Inspect(r *http.Request) Verdict {
 		}
 	}
 	tx.AddRequestHeader("Host", host)
+	// net/http moves these out of r.Header; without them CRS 920180 flags every POST.
+	if r.ContentLength > 0 {
+		tx.AddRequestHeader("Content-Length", strconv.FormatInt(r.ContentLength, 10))
+	}
+	for _, te := range r.TransferEncoding {
+		tx.AddRequestHeader("Transfer-Encoding", te)
+	}
 
 	interruption := tx.ProcessRequestHeaders()
 	if interruption == nil && r.Body != nil {

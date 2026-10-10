@@ -213,7 +213,7 @@ Notes:
 
 - **It fails closed.** While `netopt-waf` is down, every router that lists the `waf` middleware answers 500. Add it to the routes you want protected, not to everything.
 - **Never add it to the `speedtest` or `agents` routers.** Traefik buffers a request body before asking the WAF, which breaks speed tests and long-lived streams.
-- Request bodies larger than the middleware's `maxBodySize` (10 MB in the example) are refused on routes that use it. Raise it for upload-heavy apps.
+- Traefik answers **401** to a request whose body is larger than the middleware's `maxBodySize` (10 MB in the example), before the WAF sees it. Raise it for upload-heavy apps.
 - The client IP comes from the `X-Forwarded-For` header Traefik builds, so set `FORWARDED_TRUSTED_IPS` when Traefik sits behind Cloudflare (see above), or every event shows Cloudflare's address.
 - `/api/events` needs `WAF_API_TOKEN`. Without it the WAF still filters, but Network Optimizer cannot read its events.
 - Response bodies are never inspected: `forwardAuth` sees only the request.
