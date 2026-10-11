@@ -62,7 +62,7 @@ The `windows/` directory contains the config templates used by the MSI build:
 | `WAF_MODE` | No | `detect` | `detect` logs attacks and lets them through; `block` answers 403. |
 | `WAF_PARANOIA` | No | `1` | OWASP CRS paranoia level, 1-4. Higher catches more and flags more legitimate traffic. |
 | `WAF_API_TOKEN` | No | none | Shared secret Network Optimizer uses to read WAF events. |
-| `WAF_LISTEN` | No | `127.0.0.1:8044` | WAF listen address. Change only if Network Optimizer runs on another host. |
+| `WAF_LISTEN` | No | `127.0.0.1:8044` | WAF listen address. Change only if neither Network Optimizer nor the site's On-Site Agent runs on this host. |
 
 ### Dynamic Config (`dynamic/config.yml`)
 
@@ -205,7 +205,7 @@ It complements UniFi CyberSecure rather than replacing it: the gateway's IPS see
 1. In `.env`, set `COMPOSE_PROFILES=waf` and a `WAF_API_TOKEN` (`openssl rand -hex 32`).
 2. Run `bash setup.sh` once to create `waf-rules/before-crs.conf`, `waf-rules/after-crs.conf`, and `waf-rules/plugins/`, then `docker compose up -d`. The first start builds the image. Re-running it on an existing install is safe: it only creates what is missing.
 3. Make sure `dynamic/config.yml` defines the `waf` middleware (copy it from `config.example.yml` on installs that predate it), then add `- waf` to a router's `middlewares`.
-4. In Network Optimizer, Settings - Security & Alerts - Web Application Firewall: URL `http://127.0.0.1:8044` (same host) and the token.
+4. In Network Optimizer, switch to the site this proxy serves and open Settings - Security & Alerts - Web Application Firewall (also under Threat Intelligence - Web Application Firewall - Setup). Enter the URL and the token. `http://127.0.0.1:8044` works when the proxy runs on the same host as Network Optimizer, or on the same host as that site's On-Site Agent: a site reached through its agent has the agent make the connection. Each site can have its own WAF, or none.
 
 It starts in `detect` mode: attacks are logged and let through. Run it that way for a while, add exclusions for anything legitimate it flags, and then set `WAF_MODE=block` and `docker compose up -d netopt-waf`.
 
