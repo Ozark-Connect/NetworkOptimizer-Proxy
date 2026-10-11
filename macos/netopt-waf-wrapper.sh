@@ -3,7 +3,7 @@
 # Location on target: /usr/local/etc/netopt-waf/netopt-waf-wrapper.sh
 #
 # Settings file (/usr/local/etc/netopt-waf/waf.env) is box-only, not tracked:
-#   WAF_MODE=detect            # detect or block
+#   WAF_MODE=detect            # starting mode, detect or block; Network Optimizer can switch it
 #   WAF_PARANOIA=1             # OWASP CRS paranoia level 1-4
 #   WAF_API_TOKEN=<openssl rand -hex 32>
 #
@@ -23,5 +23,8 @@ fi
 
 export WAF_LISTEN="${WAF_LISTEN:-127.0.0.1:8044}"
 export WAF_RULES_DIR="/usr/local/etc/netopt-waf"
+# The mode set from Network Optimizer and its allow lists persist here; WAF_MODE is only the starting mode.
+export WAF_STATE_DIR="${WAF_STATE_DIR:-/usr/local/var/netopt-waf}"
+mkdir -p "$WAF_STATE_DIR"
 
 exec /usr/local/bin/netopt-waf

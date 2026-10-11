@@ -226,7 +226,7 @@ func TestParseTrusted(t *testing.T) {
 func TestHandler_CheckAndEventsApi(t *testing.T) {
 	cfg := config{Mode: ModeBlock, Paranoia: 1, Token: "secret"}
 	store := NewStore(10)
-	h := newHandler(engineFor(t, ModeBlock), store, NewBanList(), mustAllow(t, ""), cfg)
+	h := newHandler(engineFor(t, ModeBlock), store, NewBanList(), mustAllow(t, ""), testModes(t, "", ModeBlock), cfg)
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, forwardAuth("GET", "/ok", ""))
@@ -346,7 +346,7 @@ func TestBanList_RejectsBadEntries(t *testing.T) {
 func TestHandler_BannedClientRefusedInDetectMode(t *testing.T) {
 	cfg := config{Mode: ModeDetect, Paranoia: 1, Token: "secret"}
 	store := NewStore(10)
-	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), mustAllow(t, ""), cfg)
+	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), mustAllow(t, ""), testModes(t, "", ModeDetect), cfg)
 
 	put := func(auth, body string) int {
 		req := httptest.NewRequest("PUT", "/api/bans", strings.NewReader(body))
@@ -409,7 +409,7 @@ func TestHandler_AllowList(t *testing.T) {
 	cfg := config{Mode: ModeDetect, Paranoia: 1, Token: "secret"}
 	store := NewStore(10)
 	dir := t.TempDir()
-	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), mustAllow(t, dir), cfg)
+	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), mustAllow(t, dir), testModes(t, "", ModeDetect), cfg)
 
 	check := func(path string) int {
 		req := forwardAuth("GET", "/clean", "") // from 203.0.113.7
@@ -475,5 +475,57 @@ func TestAllowLists_LocalSourcesAlwaysPass(t *testing.T) {
 	}
 	if err := a.Replace("Bad Name", nil); err == nil {
 		t.Error("bad name accepted")
+	}
+}
+
+func testModes(t *testing.T, dir, mode string) *ModeStore {
+	t.Helper()
+	m, err := NewModeStore(dir, mode, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestHandler_ModeSwitchesAndPersists(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config{Mode: ModeDetect, Paranoia: 1, Token: "secret"}
+	engine := engineFor(t, ModeDetect)
+	modes := testModes(t, dir, ModeDetect)
+	h := newHandler(engine, NewStore(10), NewBanList(), mustAllow(t, ""), modes, cfg)
+
+	put := func(body string) int {
+		req := httptest.NewRequest("PUT", "/api/mode", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer secret")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	check := func(uri string) int {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, forwardAuth("GET", uri, ""))
+		return rec.Code
+	}
+	attack := "/?id=1%27%20OR%20%271%27=%271"
+
+	if code := check(attack); code != http.StatusOK {
+		t.Fatalf("detect mode = %d, want 200", code)
+	}
+	if code := put(`{"mode":"block"}`); code != http.StatusOK {
+		t.Fatalf("PUT block = %d", code)
+	}
+	if code := check(attack); code != http.StatusForbidden {
+		t.Fatalf("after switching to block = %d, want 403", code)
+	}
+	if code := put(`{"mode":"off"}`); code != http.StatusBadRequest {
+		t.Fatalf("bad mode = %d", code)
+	}
+	if engine.Mode() != ModeBlock {
+		t.Fatalf("bad mode changed the engine to %s", engine.Mode())
+	}
+
+	// A restart keeps block, whatever WAF_MODE says.
+	if got := testModes(t, dir, ModeDetect).Get(); got.Mode != ModeBlock || !got.Persisted {
+		t.Fatalf("reloaded mode: %+v", got)
 	}
 }

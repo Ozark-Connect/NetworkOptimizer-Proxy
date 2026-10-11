@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	coreruleset "github.com/corazawaf/coraza-coreruleset/v4"
 	"github.com/corazawaf/coraza/v3"
@@ -23,17 +24,53 @@ const inboundAnomalyRuleID = 949110
 
 var totalScorePattern = regexp.MustCompile(`Total Score: (\d+)`)
 
-// Engine evaluates requests forwarded by Traefik's forwardAuth against Coraza + OWASP CRS.
+// Engine evaluates requests forwarded by Traefik's forwardAuth against Coraza + OWASP CRS. The
+// mode can change at runtime (SetMode): Coraza fixes SecRuleEngine at build time, so a change
+// builds a new WAF and swaps it in; requests already running finish on the old one.
 type Engine struct {
-	waf     coraza.WAF
-	mode    string
-	trusted []netip.Prefix
+	mu        sync.RWMutex
+	waf       coraza.WAF
+	mode      string
+	trusted   []netip.Prefix
+	paranoia  int
+	rulesDir  string
+	bodyLimit int
 }
 
 // NewEngine builds a WAF from the embedded CRS plus optional files in rulesDir: CRS plugins in
 // plugins/, before-crs.conf (runtime ctl exclusions), and after-crs.conf (SecRuleRemoveById and
 // friends). trusted lists the proxies whose X-Forwarded-For entries are skipped to find the client.
 func NewEngine(mode string, paranoia int, rulesDir string, bodyLimit int, trusted []netip.Prefix) (*Engine, error) {
+	e := &Engine{trusted: trusted, paranoia: paranoia, rulesDir: rulesDir, bodyLimit: bodyLimit}
+	if err := e.SetMode(mode); err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// Mode is the current mode, detect or block.
+func (e *Engine) Mode() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mode
+}
+
+// SetMode rebuilds the WAF for mode and swaps it in.
+func (e *Engine) SetMode(mode string) error {
+	if mode != ModeDetect && mode != ModeBlock {
+		return fmt.Errorf("mode must be %q or %q, got %q", ModeDetect, ModeBlock, mode)
+	}
+	waf, err := buildWAF(mode, e.paranoia, e.rulesDir, e.bodyLimit)
+	if err != nil {
+		return err
+	}
+	e.mu.Lock()
+	e.waf, e.mode = waf, mode
+	e.mu.Unlock()
+	return nil
+}
+
+func buildWAF(mode string, paranoia int, rulesDir string, bodyLimit int) (coraza.WAF, error) {
 	engineMode := "DetectionOnly"
 	if mode == ModeBlock {
 		engineMode = "On"
@@ -78,7 +115,7 @@ func NewEngine(mode string, paranoia int, rulesDir string, bodyLimit int, truste
 	if err != nil {
 		return nil, fmt.Errorf("load rules: %w", err)
 	}
-	return &Engine{waf: waf, mode: mode, trusted: trusted}, nil
+	return waf, nil
 }
 
 func readOptional(dir, name string) (string, error) {
@@ -127,7 +164,10 @@ type Verdict struct {
 // Inspect reconstructs the client's request from Traefik's forwardAuth subrequest and runs
 // CRS request phases 1 and 2 on it. Response phases never run: forwardAuth sees no response.
 func (e *Engine) Inspect(r *http.Request) Verdict {
-	tx := e.waf.NewTransaction()
+	e.mu.RLock()
+	waf := e.waf
+	e.mu.RUnlock()
+	tx := waf.NewTransaction()
 	defer func() {
 		tx.ProcessLogging()
 		_ = tx.Close()

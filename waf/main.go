@@ -90,7 +90,12 @@ func main() {
 		os.Exit(probe(cfg.Listen))
 	}
 
-	engine, err := NewEngine(cfg.Mode, cfg.Paranoia, cfg.RulesDir, cfg.BodyLimit, cfg.Trusted)
+	// A mode set from Network Optimizer is saved and wins; WAF_MODE is only the starting mode.
+	modes, err := NewModeStore(cfg.StateDir, cfg.Mode, time.Now())
+	if err != nil {
+		log.Fatal(err)
+	}
+	engine, err := NewEngine(modes.Get().Mode, cfg.Paranoia, cfg.RulesDir, cfg.BodyLimit, cfg.Trusted)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -105,14 +110,14 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           newHandler(engine, store, NewBanList(), allow, cfg),
+		Handler:           newHandler(engine, store, NewBanList(), allow, modes, cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.Printf("netopt-waf listening on %s, mode=%s, paranoia=%d, trusted proxies=%d", cfg.Listen, cfg.Mode, cfg.Paranoia, len(cfg.Trusted))
+	log.Printf("netopt-waf listening on %s, mode=%s, paranoia=%d, trusted proxies=%d", cfg.Listen, engine.Mode(), cfg.Paranoia, len(cfg.Trusted))
 	log.Fatal(srv.ListenAndServe())
 }
 
-func newHandler(engine *Engine, store *Store, bans *BanList, allow *AllowLists, cfg config) http.Handler {
+func newHandler(engine *Engine, store *Store, bans *BanList, allow *AllowLists, modes *ModeStore, cfg config) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/check", func(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +160,9 @@ func newHandler(engine *Engine, store *Store, bans *BanList, allow *AllowLists, 
 			limit = l
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(store.Since(since, limit, cfg.Mode, cfg.Paranoia))
+		page := store.Since(since, limit, engine.Mode(), cfg.Paranoia)
+		page.ModeSince = modes.Get().Since
+		_ = json.NewEncoder(w).Encode(page)
 	})
 
 	mux.HandleFunc("GET /api/bans", func(w http.ResponseWriter, r *http.Request) {
@@ -186,6 +193,43 @@ func newHandler(engine *Engine, store *Store, bans *BanList, allow *AllowLists, 
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(bans.List())
+	})
+
+	mux.HandleFunc("GET /api/mode", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r, cfg.Token) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(modes.Get())
+	})
+
+	// PUT switches between detect and block. The new rules engine is built before the old one is
+	// replaced, so a failed build leaves the mode unchanged.
+	mux.HandleFunc("PUT /api/mode", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r, cfg.Token) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			Mode string `json:"mode"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := engine.SetMode(body.Mode); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		state, err := modes.Set(body.Mode, time.Now())
+		if err != nil {
+			http.Error(w, "mode changed but not saved: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("mode set to %s by the API", body.Mode)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(state)
 	})
 
 	mux.HandleFunc("GET /api/allowlists", func(w http.ResponseWriter, r *http.Request) {

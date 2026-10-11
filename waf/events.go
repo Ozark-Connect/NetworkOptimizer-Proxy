@@ -51,10 +51,12 @@ type EventPage struct {
 	Instance string    `json:"instance"`
 	Started  time.Time `json:"started"`
 	Mode     string    `json:"mode"`
-	Paranoia int       `json:"paranoia"`
-	Stats    Stats     `json:"stats"`
-	Next     uint64    `json:"next"`
-	Events   []Event   `json:"events"`
+	// When the current mode took effect.
+	ModeSince time.Time `json:"modeSince"`
+	Paranoia  int       `json:"paranoia"`
+	Stats     Stats     `json:"stats"`
+	Next      uint64    `json:"next"`
+	Events    []Event   `json:"events"`
 }
 
 // Store keeps the most recent events in a fixed-size ring with monotonically increasing sequence numbers.
