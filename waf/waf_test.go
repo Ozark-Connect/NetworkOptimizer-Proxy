@@ -226,7 +226,7 @@ func TestParseTrusted(t *testing.T) {
 func TestHandler_CheckAndEventsApi(t *testing.T) {
 	cfg := config{Mode: ModeBlock, Paranoia: 1, Token: "secret"}
 	store := NewStore(10)
-	h := newHandler(engineFor(t, ModeBlock), store, NewBanList(), cfg)
+	h := newHandler(engineFor(t, ModeBlock), store, NewBanList(), mustAllow(t, ""), cfg)
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, forwardAuth("GET", "/ok", ""))
@@ -346,7 +346,7 @@ func TestBanList_RejectsBadEntries(t *testing.T) {
 func TestHandler_BannedClientRefusedInDetectMode(t *testing.T) {
 	cfg := config{Mode: ModeDetect, Paranoia: 1, Token: "secret"}
 	store := NewStore(10)
-	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), cfg)
+	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), mustAllow(t, ""), cfg)
 
 	put := func(auth, body string) int {
 		req := httptest.NewRequest("PUT", "/api/bans", strings.NewReader(body))
@@ -394,4 +394,86 @@ func hasTag(e *Event, tag string) bool {
 		}
 	}
 	return false
+}
+
+func mustAllow(t *testing.T, dir string) *AllowLists {
+	t.Helper()
+	a, err := NewAllowLists(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+func TestHandler_AllowList(t *testing.T) {
+	cfg := config{Mode: ModeDetect, Paranoia: 1, Token: "secret"}
+	store := NewStore(10)
+	dir := t.TempDir()
+	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), mustAllow(t, dir), cfg)
+
+	check := func(path string) int {
+		req := forwardAuth("GET", "/clean", "") // from 203.0.113.7
+		req.URL.RawQuery = strings.TrimPrefix(path, "?")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	put := func(body string) int {
+		req := httptest.NewRequest("PUT", "/api/allowlists/trusted", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer secret")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := check("?allow=trusted"); code != http.StatusOK {
+		t.Fatalf("before any list = %d, want open", code)
+	}
+	if code := put(`{"entries":["198.51.100.0/24"]}`); code != http.StatusOK {
+		t.Fatalf("PUT = %d", code)
+	}
+	if code := check("?allow=trusted"); code != http.StatusForbidden {
+		t.Fatalf("non-member = %d, want 403", code)
+	}
+	if code := check(""); code != http.StatusOK {
+		t.Fatalf("route without a list = %d, want 200", code)
+	}
+	if s := store.Since(0, 10, ModeDetect, 1).Stats; s.NotAllowed != 1 {
+		t.Fatalf("stats: %+v", s)
+	}
+	if code := put(`{"entries":["198.51.100.0/24","203.0.113.7"]}`); code != http.StatusOK {
+		t.Fatalf("PUT = %d", code)
+	}
+	if code := check("?allow=trusted"); code != http.StatusOK {
+		t.Fatalf("member = %d, want 200", code)
+	}
+	if code := put(`{"entries":["not-an-ip"]}`); code != http.StatusBadRequest {
+		t.Fatalf("bad entry PUT = %d", code)
+	}
+
+	// A restart keeps the list: the route stays closed to non-members.
+	reloaded := mustAllow(t, dir)
+	if !reloaded.Allowed("trusted", "203.0.113.7") || reloaded.Allowed("trusted", "192.0.2.9") {
+		t.Fatalf("reloaded list: %+v", reloaded.List())
+	}
+}
+
+func TestAllowLists_LocalSourcesAlwaysPass(t *testing.T) {
+	a := mustAllow(t, "")
+	if err := a.Replace("trusted", []string{"198.51.100.7"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, ip := range []string{"192.168.1.10", "10.0.0.5", "fd3a::1", "127.0.0.1", "::ffff:192.168.1.10"} {
+		if !a.Allowed("trusted", ip) {
+			t.Errorf("%s refused", ip)
+		}
+	}
+	for _, ip := range []string{"100.97.85.114", "203.0.113.7", "2001:db8::1"} {
+		if a.Allowed("trusted", ip) {
+			t.Errorf("%s allowed", ip)
+		}
+	}
+	if err := a.Replace("Bad Name", nil); err == nil {
+		t.Error("bad name accepted")
+	}
 }

@@ -41,6 +41,8 @@ type Stats struct {
 	Detected  uint64 `json:"detected"`
 	// Requests refused by the ban list; they never reach the rules, so they are not Inspected.
 	Banned uint64 `json:"banned"`
+	// Requests refused because the route's allow list does not include the source.
+	NotAllowed uint64 `json:"notAllowed"`
 }
 
 // EventPage is the events API response.
@@ -107,6 +109,13 @@ func (s *Store) Record(v Verdict) {
 func (s *Store) RecordBanned() {
 	s.mu.Lock()
 	s.stats.Banned++
+	s.mu.Unlock()
+}
+
+// RecordNotAllowed counts a request refused by a route's allow list.
+func (s *Store) RecordNotAllowed() {
+	s.mu.Lock()
+	s.stats.NotAllowed++
 	s.mu.Unlock()
 }
 

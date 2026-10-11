@@ -72,8 +72,11 @@ services:
       WAF_API_TOKEN: ${WAF_API_TOKEN:-}
       # Same list as Traefik's, so the WAF skips those hops to find the client.
       WAF_TRUSTED_PROXIES: ${FORWARDED_TRUSTED_IPS:-}
+      # Allow lists Network Optimizer pushes are kept here, so a restart never reopens a route.
+      WAF_STATE_DIR: /var/lib/netopt-waf
     volumes:
       - ./waf-rules:/etc/netopt-waf:ro
+      - waf-state:/var/lib/netopt-waf
     healthcheck:
       test: ["CMD", "/netopt-waf", "-healthcheck"]
       interval: 30s
@@ -87,3 +90,4 @@ services:
 
 volumes:
   traefik-logs:
+  waf-state:

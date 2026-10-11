@@ -32,6 +32,7 @@ type config struct {
 	BodyLimit int
 	Capacity  int
 	Trusted   []netip.Prefix
+	StateDir  string
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -40,6 +41,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		Mode:      strings.ToLower(envOr(getenv, "WAF_MODE", ModeDetect)),
 		Token:     getenv("WAF_API_TOKEN"),
 		RulesDir:  envOr(getenv, "WAF_RULES_DIR", "/etc/netopt-waf"),
+		StateDir:  getenv("WAF_STATE_DIR"),
 		Paranoia:  1,
 		BodyLimit: 10 << 20,
 		Capacity:  10000,
@@ -93,25 +95,37 @@ func main() {
 		log.Fatal(err)
 	}
 	store := NewStore(cfg.Capacity)
+	allow, err := NewAllowLists(cfg.StateDir)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if cfg.Token == "" {
 		log.Print("WAF_API_TOKEN is not set: /api/events is disabled, Network Optimizer cannot read events")
 	}
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           newHandler(engine, store, NewBanList(), cfg),
+		Handler:           newHandler(engine, store, NewBanList(), allow, cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Printf("netopt-waf listening on %s, mode=%s, paranoia=%d, trusted proxies=%d", cfg.Listen, cfg.Mode, cfg.Paranoia, len(cfg.Trusted))
 	log.Fatal(srv.ListenAndServe())
 }
 
-func newHandler(engine *Engine, store *Store, bans *BanList, cfg config) http.Handler {
+func newHandler(engine *Engine, store *Store, bans *BanList, allow *AllowLists, cfg config) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/check", func(w http.ResponseWriter, r *http.Request) {
+		client := engine.ClientIP(r)
+		// A route that names an allow list (/check?allow=trusted) takes only its members and LAN
+		// sources. Like bans, this applies in detect mode: it is the operator's decision, not a rule match.
+		if name := r.URL.Query().Get("allow"); name != "" && !allow.Allowed(name, client) {
+			store.RecordNotAllowed()
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
 		// Bans apply in detect mode too: they are Network Optimizer's decision, not a rule match.
-		if bans.Banned(engine.ClientIP(r)) {
+		if bans.Banned(client) {
 			store.RecordBanned()
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
@@ -172,6 +186,36 @@ func newHandler(engine *Engine, store *Store, bans *BanList, cfg config) http.Ha
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(bans.List())
+	})
+
+	mux.HandleFunc("GET /api/allowlists", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r, cfg.Token) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(allow.List())
+	})
+
+	// PUT replaces one list whole; Network Optimizer sends its Trusted Sources as "trusted" every sync.
+	mux.HandleFunc("PUT /api/allowlists/{name}", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r, cfg.Token) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			Entries []string `json:"entries"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20)).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := allow.Replace(r.PathValue("name"), body.Entries); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(allow.List())
 	})
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
