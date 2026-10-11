@@ -258,7 +258,13 @@ func clientAddress(r *http.Request, trusted []netip.Prefix) string {
 			return last
 		}
 	}
+	// Every hop is a trusted proxy. forwardAuth sends only the connecting address in
+	// X-Forwarded-For, so behind Cloudflare that is the edge; Cloudflare puts the visitor in
+	// CF-Connecting-IP and overwrites any value the visitor sent. Read only when the peer is trusted.
 	if last != "" {
+		if cf, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("CF-Connecting-IP"))); err == nil {
+			return cf.Unmap().String()
+		}
 		return last
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)

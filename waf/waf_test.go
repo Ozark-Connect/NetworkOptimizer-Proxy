@@ -186,6 +186,33 @@ func TestClientAddress_RightMostUntrusted(t *testing.T) {
 	}
 }
 
+// forwardAuth sends only the connecting address in X-Forwarded-For, which behind Cloudflare is the edge.
+func TestClientAddress_CloudflareEdge_UsesCFConnectingIP(t *testing.T) {
+	cloudflare, _ := parseTrusted("172.64.0.0/13,2400:cb00::/32")
+	cases := []struct {
+		name, xff, cf, want string
+		trusted            []netip.Prefix
+	}{
+		{"edge with header", "172.68.150.126", "203.0.113.7", "203.0.113.7", cloudflare},
+		{"edge with IPv6 visitor", "172.68.150.126", "2001:db8::7", "2001:db8::7", cloudflare},
+		{"edge without header", "172.68.150.126", "", "172.68.150.126", cloudflare},
+		{"edge with junk header", "172.68.150.126", "nope", "172.68.150.126", cloudflare},
+		// A direct client is not a trusted peer, so its header is ignored.
+		{"direct client spoofing the header", "198.51.100.9", "203.0.113.7", "198.51.100.9", cloudflare},
+		{"no trust configured", "172.68.150.126", "203.0.113.7", "172.68.150.126", nil},
+	}
+	for _, c := range cases {
+		r := forwardAuth("GET", "/", "")
+		r.Header.Set("X-Forwarded-For", c.xff)
+		if c.cf != "" {
+			r.Header.Set("CF-Connecting-IP", c.cf)
+		}
+		if got := clientAddress(r, c.trusted); got != c.want {
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
+		}
+	}
+}
+
 func TestParseTrusted(t *testing.T) {
 	p, err := parseTrusted(" 10.0.0.1 , 2606:4700::/32,,198.51.100.0/24")
 	if err != nil || len(p) != 3 || p[0].String() != "10.0.0.1/32" {

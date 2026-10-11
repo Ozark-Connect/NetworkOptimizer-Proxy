@@ -85,6 +85,7 @@ http:
         address: "http://127.0.0.1:8044/check"
         forwardBody: true
         maxBodySize: 10485760
+        maxResponseBodySize: 65536
 
     # The same WAF for apps that take large uploads. Traefik holds each body in memory
     # while the WAF decides, so size this for your host. Bodies over it get a 401.
@@ -93,6 +94,7 @@ http:
     #     address: "http://127.0.0.1:8044/check"
     #     forwardBody: true
     #     maxBodySize: 104857600
+    #     maxResponseBodySize: 65536
 
     # Example: restrict to LAN only (customize these subnets for your network)
     lan-only:

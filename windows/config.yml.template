@@ -78,6 +78,7 @@ http:
         address: "http://127.0.0.1:8044/check"
         forwardBody: true
         maxBodySize: 10485760
+        maxResponseBodySize: 65536
 
   # --- Routers ---------------------------------------------------------------
   routers:
