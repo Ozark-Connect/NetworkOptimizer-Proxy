@@ -56,7 +56,7 @@ The `windows/` directory contains the config templates used by the MSI build:
 | `LISTEN_IP` | No | `0.0.0.0` | Bind to a specific IP address |
 | `DNS_RESOLVERS` | No | `1.1.1.1:53,1.0.0.1:53` | DNS servers for ACME DNS-01 validation. Override on hosts where the default resolvers are unreachable (e.g., `127.0.0.1:53` on a Pi-hole host that can't DNAT its own traffic to external DNS). |
 | `ACME_PROPAGATION_DELAY` | No | `20` | Seconds to wait after creating the ACME TXT record before asking Let's Encrypt to validate. Raise it (e.g. `120`) if renewals intermittently fail with `Incorrect TXT record` / `No TXT record found` and then succeed on the next daily attempt. |
-| `FORWARDED_TRUSTED_IPS` | No | none | Comma-separated IPs/CIDRs of upstream proxies whose `X-Forwarded-*` headers Traefik keeps on the HTTPS entrypoint. Leave unset unless another proxy sits in front of Traefik. See [Behind Cloudflare or another proxy](#behind-cloudflare-or-another-proxy-optional). |
+| `FORWARDED_TRUSTED_IPS` | No | none | Comma-separated IPs/CIDRs of upstream proxies whose `X-Forwarded-*` headers Traefik keeps on the HTTPS entrypoint. Leave unset unless another proxy sits in front of Traefik. The WAF uses the same list. See [Behind Cloudflare or another proxy](#behind-cloudflare-or-another-proxy-optional). |
 | `LOG_LEVEL` | No | `INFO` | Log verbosity: DEBUG, INFO, WARN, ERROR |
 | `COMPOSE_PROFILES` | No | none | `waf` runs the bundled web application firewall. See [Web Application Firewall](#web-application-firewall-optional). |
 | `WAF_MODE` | No | `detect` | `detect` logs attacks and lets them through; `block` answers 403. |
@@ -179,17 +179,19 @@ By default Traefik trusts no upstream proxy. It drops any incoming `X-Forwarded-
 
 When Traefik sits behind another proxy, such as Cloudflare's orange-cloud proxy, the connecting address is that proxy, not the client. List the proxy's addresses in `.env` so Traefik keeps the forwarded headers it adds:
 
+For Cloudflare, `.env.example` carries the full list from [cloudflare.com/ips](https://www.cloudflare.com/ips/), IPv4 and IPv6, ready to uncomment. To generate it fresh from Cloudflare's published lists:
+
 ```bash
-# Cloudflare's published ranges: https://www.cloudflare.com/ips/
-FORWARDED_TRUSTED_IPS=173.245.48.0/20,103.21.244.0/22,...
+echo "FORWARDED_TRUSTED_IPS=$( (curl -fsS https://www.cloudflare.com/ips-v4; echo; curl -fsS https://www.cloudflare.com/ips-v6) | grep . | paste -sd, -)"
 ```
 
-Then recreate the container (`docker compose up -d`). This is static config, so it does not hot-reload.
+Put the printed line in `.env`, then recreate the container (`docker compose up -d`). This is static config, so it does not hot-reload. To check it worked, look at the `X-Forwarded-For` your app logs for a request through Cloudflare: it should read `<client>, <Cloudflare edge>`. Traefik's own access log keeps showing the edge address as `ClientHost` either way.
 
 Notes:
 
 - **Anyone who can connect from a listed address chooses the client IP your app sees.** For Cloudflare that is any Cloudflare customer, so also limit the origin to your own zone, e.g. with [per-hostname Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/). Firewalling to Cloudflare's ranges alone does not do this.
-- Cloudflare's ranges change occasionally. Re-check the list when you update.
+- **Read the client from the right, not the left.** Cloudflare [appends to an `X-Forwarded-For` the visitor already sent](https://developers.cloudflare.com/fundamentals/reference/http-headers/), so the left-most entry is whatever the client chose. The client is the right-most entry that is not a trusted proxy. The bundled WAF does this with the same list.
+- Cloudflare's ranges [do not change often](https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/), and new ones are added to the published list before they go into production. Re-run the command above when you update. The [API](https://api.cloudflare.com/client/v4/ips) returns the same list for automation.
 - Network Optimizer applies its own trust setting on top: set `TRUSTED_PROXIES` and `TRUSTED_PROXY_HOPS` on the app (see its [`docker/.env.example`](https://github.com/Ozark-Connect/NetworkOptimizer/blob/main/docker/.env.example)) so it reads the client address through both hops.
 - Applies to the HTTPS entrypoint only. The HTTP entrypoint just redirects.
 - Docker only. The Windows and macOS static templates do not read this variable.
@@ -201,20 +203,42 @@ Notes:
 It complements UniFi CyberSecure rather than replacing it: the gateway's IPS sees packets, and only the proxy that terminates TLS sees the decrypted request.
 
 1. In `.env`, set `COMPOSE_PROFILES=waf` and a `WAF_API_TOKEN` (`openssl rand -hex 32`).
-2. Run `bash setup.sh` once to create `waf-rules/before-crs.conf` and `waf-rules/after-crs.conf`, then `docker compose up -d`. The first start builds the image.
+2. Run `bash setup.sh` once to create `waf-rules/before-crs.conf`, `waf-rules/after-crs.conf`, and `waf-rules/plugins/`, then `docker compose up -d`. The first start builds the image. Re-running it on an existing install is safe: it only creates what is missing.
 3. Make sure `dynamic/config.yml` defines the `waf` middleware (copy it from `config.example.yml` on installs that predate it), then add `- waf` to a router's `middlewares`.
 4. In Network Optimizer, Settings - Security & Alerts - Web Application Firewall: URL `http://127.0.0.1:8044` (same host) and the token.
 
 It starts in `detect` mode: attacks are logged and let through. Run it that way for a while, add exclusions for anything legitimate it flags, and then set `WAF_MODE=block` and `docker compose up -d netopt-waf`.
 
+### Putting Your Own Apps Behind It
+
+Any router can use the WAF: add `- waf` to its `middlewares` (see [Adding More Services](#adding-more-services)). Put it after any `ipAllowList` or auth middleware, so requests those refuse are never inspected. Opt in one app at a time and give each a detect-mode run of its own, since every app has its own false positives.
+
+Good candidates are apps with forms, logins, and APIs: a CMS, a wiki, a dashboard, a password manager's web vault. Leave it off:
+
+- Speed tests and the Network Optimizer `agents` router: Traefik buffers the request body before asking the WAF, which breaks throughput tests and long-lived streams.
+- Routes whose clients send large files (photo and file sync, backups, media uploads), unless you give them the upload middleware below.
+
+**Large uploads.** Traefik answers **401** to a request whose body is over the middleware's `maxBodySize` (10 MB for `waf`), before the WAF sees it. `config.example.yml` has a commented-out `waf-uploads` middleware with a larger cap for upload-heavy apps. Traefik holds each body in memory while it waits for the WAF, so size the cap for your host. The WAF inspects the first `WAF_BODY_LIMIT` bytes (10 MB) of anything larger.
+
+### Exclusions and App Plugins
+
 Exclusions go in `waf-rules/`: runtime exclusions (`ctl:ruleRemoveById`, scoped to a host or path) in `before-crs.conf`, and rule removals (`SecRuleRemoveById`, `SecRuleUpdateTargetById`) in `after-crs.conf`. Restart `netopt-waf` after editing. Each event lists the CRS rule IDs that fired, so the ID to exclude is in Network Optimizer's event detail.
 
-Notes:
+For common apps, the CRS project publishes tested exclusion sets as [plugins](https://github.com/coreruleset/plugin-registry): WordPress, Nextcloud, Drupal, phpMyAdmin, DokuWiki, phpBB, XenForo, and cPanel. To add one, copy the `.conf` files from its `plugins/` folder into `waf-rules/plugins/` and restart `netopt-waf`. They load in the CRS plugin order: every `*-config.conf`, then `*-before.conf`, then the Core Rule Set, then `*-after.conf`.
+
+An installed plugin applies to every host behind the WAF. To limit it to one app, edit its `-config.conf` and replace the commented-out rule with a Host check, for example for WordPress:
+
+```
+SecRule REQUEST_HEADERS:Host "!@streq blog.yourdomain.com" \
+    "id:9507010,phase:1,pass,nolog,setvar:'tx.wordpress-rule-exclusions-plugin_enabled=0'"
+```
+
+Plugins that read `.data` files are not supported: only the `.conf` files are loaded.
+
+### Notes
 
 - **It fails closed.** While `netopt-waf` is down, every router that lists the `waf` middleware answers 500. Add it to the routes you want protected, not to everything.
-- **Never add it to the `speedtest` or `agents` routers.** Traefik buffers a request body before asking the WAF, which breaks speed tests and long-lived streams.
-- Traefik answers **401** to a request whose body is larger than the middleware's `maxBodySize` (10 MB in the example), before the WAF sees it. Raise it for upload-heavy apps.
-- The client IP comes from the `X-Forwarded-For` header Traefik builds, so set `FORWARDED_TRUSTED_IPS` when Traefik sits behind Cloudflare (see above), or every event shows Cloudflare's address.
+- **Behind Cloudflare, set `FORWARDED_TRUSTED_IPS`** ([see above](#behind-cloudflare-or-another-proxy-optional)). Without it every event shows a Cloudflare address. The WAF reads the same list and takes the right-most `X-Forwarded-For` entry that is not a trusted proxy, so a client cannot choose the address it is recorded under.
 - `/api/events` needs `WAF_API_TOKEN`. Without it the WAF still filters, but Network Optimizer cannot read its events.
 - Response bodies are never inspected: `forwardAuth` sees only the request.
 - **Windows (MSI):** the Traefik feature ships `netopt-waf.exe`. Set the registry value `TRAEFIK_WAF_MODE` (string, `detect` or `block`) under `HKLM\SOFTWARE\Ozark Connect\Network Optimizer` and restart the Network Optimizer service. The service starts the WAF, puts it on the app's router, and connects Threat Intelligence to it. Exclusions go in `Traefik\waf-rules\` in the install folder.
@@ -236,6 +260,7 @@ http:
         certResolver: letsencrypt
       middlewares:
         - security-headers
+        # - waf          # optional: inspect requests with the bundled WAF
 
   services:
     my-service:
@@ -243,6 +268,8 @@ http:
         servers:
           - url: "http://localhost:9090"
 ```
+
+To run a service behind the [Web Application Firewall](#putting-your-own-apps-behind-it), uncomment `- waf`, or use `- waf-uploads` for an app that takes large uploads. Keep it after any allowlist or auth middleware.
 
 ### IP Restrictions
 

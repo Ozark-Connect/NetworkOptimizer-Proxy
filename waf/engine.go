@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,25 +25,33 @@ var totalScorePattern = regexp.MustCompile(`Total Score: (\d+)`)
 
 // Engine evaluates requests forwarded by Traefik's forwardAuth against Coraza + OWASP CRS.
 type Engine struct {
-	waf  coraza.WAF
-	mode string
+	waf     coraza.WAF
+	mode    string
+	trusted []netip.Prefix
 }
 
-// NewEngine builds a WAF from the embedded CRS plus optional exclusion files in rulesDir:
-// before-crs.conf (runtime ctl exclusions) and after-crs.conf (SecRuleRemoveById and friends).
-func NewEngine(mode string, paranoia int, rulesDir string, bodyLimit int) (*Engine, error) {
+// NewEngine builds a WAF from the embedded CRS plus optional files in rulesDir: CRS plugins in
+// plugins/, before-crs.conf (runtime ctl exclusions), and after-crs.conf (SecRuleRemoveById and
+// friends). trusted lists the proxies whose X-Forwarded-For entries are skipped to find the client.
+func NewEngine(mode string, paranoia int, rulesDir string, bodyLimit int, trusted []netip.Prefix) (*Engine, error) {
 	engineMode := "DetectionOnly"
 	if mode == ModeBlock {
 		engineMode = "On"
 	}
 
-	before, err := readOptional(rulesDir, "before-crs.conf")
-	if err != nil {
-		return nil, err
-	}
-	after, err := readOptional(rulesDir, "after-crs.conf")
-	if err != nil {
-		return nil, err
+	var parts [5]string
+	var err error
+	// CRS plugin order: config, before, the CRS rules, after.
+	for i, load := range []func() (string, error){
+		func() (string, error) { return readGlob(rulesDir, "plugins/*-config.conf") },
+		func() (string, error) { return readGlob(rulesDir, "plugins/*-before.conf") },
+		func() (string, error) { return readOptional(rulesDir, "before-crs.conf") },
+		func() (string, error) { return readGlob(rulesDir, "plugins/*-after.conf") },
+		func() (string, error) { return readOptional(rulesDir, "after-crs.conf") },
+	} {
+		if parts[i], err = load(); err != nil {
+			return nil, err
+		}
 	}
 
 	directives := strings.Join([]string{
@@ -55,9 +64,12 @@ func NewEngine(mode string, paranoia int, rulesDir string, bodyLimit int) (*Engi
 		"SecAuditEngine Off",
 		"Include @crs-setup.conf.example",
 		fmt.Sprintf(`SecAction "id:900000,phase:1,pass,t:none,nolog,setvar:tx.blocking_paranoia_level=%d"`, paranoia),
-		before,
+		parts[0],
+		parts[1],
+		parts[2],
 		"Include @owasp_crs/*.conf",
-		after,
+		parts[3],
+		parts[4],
 	}, "\n")
 
 	waf, err := coraza.NewWAF(coraza.NewWAFConfig().
@@ -66,7 +78,7 @@ func NewEngine(mode string, paranoia int, rulesDir string, bodyLimit int) (*Engi
 	if err != nil {
 		return nil, fmt.Errorf("load rules: %w", err)
 	}
-	return &Engine{waf: waf, mode: mode}, nil
+	return &Engine{waf: waf, mode: mode, trusted: trusted}, nil
 }
 
 func readOptional(dir, name string) (string, error) {
@@ -81,6 +93,29 @@ func readOptional(dir, name string) (string, error) {
 		return "", fmt.Errorf("read %s: %w", name, err)
 	}
 	return string(b), nil
+}
+
+// readGlob concatenates the files matching pattern under dir in name order. Their contents are
+// inlined because Include resolves against the embedded CRS, not the disk.
+func readGlob(dir, pattern string) (string, error) {
+	if dir == "" {
+		return "", nil
+	}
+	paths, err := filepath.Glob(filepath.Join(dir, pattern))
+	if err != nil {
+		return "", err
+	}
+	sort.Strings(paths)
+	var b strings.Builder
+	for _, p := range paths {
+		content, err := os.ReadFile(p)
+		if err != nil {
+			return "", fmt.Errorf("read %s: %w", p, err)
+		}
+		b.Write(content)
+		b.WriteString("\n")
+	}
+	return b.String(), nil
 }
 
 // Verdict is the outcome of inspecting one request.
@@ -101,7 +136,7 @@ func (e *Engine) Inspect(r *http.Request) Verdict {
 	method := firstNonEmpty(r.Header.Get("X-Forwarded-Method"), r.Method)
 	uri := firstNonEmpty(r.Header.Get("X-Forwarded-Uri"), r.URL.RequestURI())
 	host := firstNonEmpty(r.Header.Get("X-Forwarded-Host"), r.Host)
-	clientIP := clientAddress(r)
+	clientIP := clientAddress(r, e.trusted)
 
 	tx.ProcessConnection(clientIP, 0, "", 0)
 	tx.SetServerName(host)
@@ -196,20 +231,70 @@ func severityRank(s string) int {
 	return 99
 }
 
-// clientAddress is the left-most X-Forwarded-For entry. Traefik rebuilds that header from the
-// connection unless the entrypoint trusts an upstream proxy, so the left-most entry is the client.
-func clientAddress(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		first := strings.TrimSpace(strings.Split(xff, ",")[0])
-		if net.ParseIP(first) != nil {
-			return first
+// clientAddress is the right-most X-Forwarded-For entry that is not a trusted proxy. Never the
+// left-most: behind Cloudflare that entry is whatever the client sent, so it is spoofable.
+func clientAddress(r *http.Request, trusted []netip.Prefix) string {
+	var entries []string
+	for _, h := range r.Header.Values("X-Forwarded-For") {
+		for _, e := range strings.Split(h, ",") {
+			if e = strings.TrimSpace(e); e != "" {
+				entries = append(entries, e)
+			}
 		}
+	}
+	last := ""
+	for i := len(entries) - 1; i >= 0; i-- {
+		addr, err := netip.ParseAddr(entries[i])
+		if err != nil {
+			break // a malformed hop: nothing to its left can be trusted either
+		}
+		last = addr.Unmap().String()
+		if !isTrusted(addr.Unmap(), trusted) {
+			return last
+		}
+	}
+	if last != "" {
+		return last
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+func isTrusted(addr netip.Addr, trusted []netip.Prefix) bool {
+	for _, p := range trusted {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseTrusted reads a comma-separated list of IPs and CIDRs, the format of FORWARDED_TRUSTED_IPS.
+func parseTrusted(list string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, item := range strings.Split(list, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if !strings.Contains(item, "/") {
+			addr, err := netip.ParseAddr(item)
+			if err != nil {
+				return nil, fmt.Errorf("trusted proxy %q: %w", item, err)
+			}
+			out = append(out, netip.PrefixFrom(addr.Unmap(), addr.Unmap().BitLen()))
+			continue
+		}
+		p, err := netip.ParsePrefix(item)
+		if err != nil {
+			return nil, fmt.Errorf("trusted proxy %q: %w", item, err)
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
 }
 
 // Headers Traefik adds for the auth hop itself; the original request never carried them.

@@ -9,6 +9,8 @@ dynamic/*.yml
 
 # WAF exclusions (user-specific, examples are tracked)
 waf-rules/*.conf
+waf-rules/plugins/*
+!waf-rules/plugins/README.md
 
 # ACME certificate storage
 acme/

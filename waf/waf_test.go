@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,7 @@ var (
 func engineFor(t *testing.T, mode string) *Engine {
 	t.Helper()
 	build := func() *Engine {
-		e, err := NewEngine(mode, 1, "", 10<<20)
+		e, err := NewEngine(mode, 1, "", 10<<20, nil)
 		if err != nil {
 			t.Fatalf("NewEngine(%s): %v", mode, err)
 		}
@@ -106,12 +107,91 @@ func TestExclusionFile_RemovesRule(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "after-crs.conf"), []byte("SecRuleRemoveByTag attack-sqli\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	e, err := NewEngine(ModeDetect, 1, dir, 10<<20)
+	e, err := NewEngine(ModeDetect, 1, dir, 10<<20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if v := e.Inspect(forwardAuth("GET", "/items?id=1%27%20OR%20%271%27%3D%271", "")); v.Event != nil && hasTag(v.Event, "attack-sqli") {
 		t.Fatalf("sqli rules should be removed: %+v", v.Event)
+	}
+}
+
+func writePlugin(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "plugins"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plugins", name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const sqliURI = "/items?id=1%27%20OR%20%271%27%3D%271"
+
+// The before rule only acts on the variable the config file sets, so it passes only in CRS order.
+func TestPlugins_ConfigLoadsBeforeBefore(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "test-config.conf", `SecAction "id:9001,phase:1,pass,nolog,setvar:tx.test_plugin_enabled=1"`)
+	writePlugin(t, dir, "test-before.conf", `SecRule TX:test_plugin_enabled "@eq 1" "id:9002,phase:1,pass,nolog,ctl:ruleRemoveByTag=attack-sqli"`)
+	e, err := NewEngine(ModeDetect, 1, dir, 10<<20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := e.Inspect(forwardAuth("GET", sqliURI, "")); v.Event != nil && hasTag(v.Event, "attack-sqli") {
+		t.Fatalf("plugin exclusion did not apply: %+v", v.Event)
+	}
+}
+
+// SecRuleRemoveByTag only removes rules already loaded, so this passes only after the CRS.
+func TestPlugins_AfterLoadsAfterCrs(t *testing.T) {
+	dir := t.TempDir()
+	writePlugin(t, dir, "test-after.conf", "SecRuleRemoveByTag attack-sqli\n")
+	e, err := NewEngine(ModeDetect, 1, dir, 10<<20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := e.Inspect(forwardAuth("GET", sqliURI, "")); v.Event != nil && hasTag(v.Event, "attack-sqli") {
+		t.Fatalf("after plugin did not apply: %+v", v.Event)
+	}
+}
+
+func TestClientAddress_RightMostUntrusted(t *testing.T) {
+	cloudflare, err := parseTrusted("173.245.48.0/20,2400:cb00::/32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, xff, want string
+		trusted         bool
+	}{
+		{"direct, no trust", "203.0.113.7", "203.0.113.7", false},
+		{"spoofed entry without trust", "198.51.100.1, 203.0.113.7", "203.0.113.7", false},
+		{"behind Cloudflare", "203.0.113.7, 173.245.48.10", "203.0.113.7", true},
+		{"spoof behind Cloudflare", "198.51.100.1, 203.0.113.7, 173.245.48.10", "203.0.113.7", true},
+		{"IPv6 edge", "2001:db8::7, 2400:cb00::1", "2001:db8::7", true},
+		{"only trusted hops", "173.245.48.10", "173.245.48.10", true},
+		{"malformed left of client", "junk, 203.0.113.7, 173.245.48.10", "203.0.113.7", true},
+	}
+	for _, c := range cases {
+		r := forwardAuth("GET", "/", "")
+		r.Header.Set("X-Forwarded-For", c.xff)
+		var trusted []netip.Prefix
+		if c.trusted {
+			trusted = cloudflare
+		}
+		if got := clientAddress(r, trusted); got != c.want {
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
+		}
+	}
+}
+
+func TestParseTrusted(t *testing.T) {
+	p, err := parseTrusted(" 10.0.0.1 , 2606:4700::/32,,198.51.100.0/24")
+	if err != nil || len(p) != 3 || p[0].String() != "10.0.0.1/32" {
+		t.Fatalf("parse: %v %v", p, err)
+	}
+	if _, err := parseTrusted("10.0.0.0/33"); err == nil {
+		t.Fatal("bad prefix accepted")
 	}
 }
 
@@ -184,6 +264,9 @@ func TestLoadConfig_Validates(t *testing.T) {
 	}
 	if _, err := loadConfig(env(map[string]string{"WAF_PARANOIA": "5"})); err == nil {
 		t.Fatal("bad paranoia accepted")
+	}
+	if _, err := loadConfig(env(map[string]string{"WAF_TRUSTED_PROXIES": "not-an-ip"})); err == nil {
+		t.Fatal("bad trusted proxy accepted")
 	}
 	c, err := loadConfig(env(map[string]string{}))
 	if err != nil || c.Mode != ModeDetect || c.Listen != "127.0.0.1:8044" || c.Paranoia != 1 {

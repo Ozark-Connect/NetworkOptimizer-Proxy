@@ -37,6 +37,7 @@ else
 fi
 
 # Create WAF exclusion files from examples if they don't exist
+mkdir -p "$PROJECT_DIR/waf-rules/plugins"
 for f in before-crs.conf after-crs.conf; do
     if [ ! -f "$PROJECT_DIR/waf-rules/$f" ]; then
         cp "$PROJECT_DIR/waf-rules/$f.example" "$PROJECT_DIR/waf-rules/$f"

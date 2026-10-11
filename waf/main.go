@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ type config struct {
 	RulesDir  string
 	BodyLimit int
 	Capacity  int
+	Trusted   []netip.Prefix
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -59,6 +61,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 		}
 		c.BodyLimit = n
 	}
+	trusted, err := parseTrusted(getenv("WAF_TRUSTED_PROXIES"))
+	if err != nil {
+		return c, fmt.Errorf("WAF_TRUSTED_PROXIES: %w", err)
+	}
+	c.Trusted = trusted
 	return c, nil
 }
 
@@ -81,7 +88,7 @@ func main() {
 		os.Exit(probe(cfg.Listen))
 	}
 
-	engine, err := NewEngine(cfg.Mode, cfg.Paranoia, cfg.RulesDir, cfg.BodyLimit)
+	engine, err := NewEngine(cfg.Mode, cfg.Paranoia, cfg.RulesDir, cfg.BodyLimit, cfg.Trusted)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -95,7 +102,7 @@ func main() {
 		Handler:           newHandler(engine, store, cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.Printf("netopt-waf listening on %s, mode=%s, paranoia=%d", cfg.Listen, cfg.Mode, cfg.Paranoia)
+	log.Printf("netopt-waf listening on %s, mode=%s, paranoia=%d, trusted proxies=%d", cfg.Listen, cfg.Mode, cfg.Paranoia, len(cfg.Trusted))
 	log.Fatal(srv.ListenAndServe())
 }
 
