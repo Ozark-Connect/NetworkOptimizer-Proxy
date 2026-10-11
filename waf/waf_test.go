@@ -191,7 +191,7 @@ func TestClientAddress_CloudflareEdge_UsesCFConnectingIP(t *testing.T) {
 	cloudflare, _ := parseTrusted("172.64.0.0/13,2400:cb00::/32")
 	cases := []struct {
 		name, xff, cf, want string
-		trusted            []netip.Prefix
+		trusted             []netip.Prefix
 	}{
 		{"edge with header", "172.68.150.126", "203.0.113.7", "203.0.113.7", cloudflare},
 		{"edge with IPv6 visitor", "172.68.150.126", "2001:db8::7", "2001:db8::7", cloudflare},
