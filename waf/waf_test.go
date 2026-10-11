@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 var (
@@ -198,7 +199,7 @@ func TestParseTrusted(t *testing.T) {
 func TestHandler_CheckAndEventsApi(t *testing.T) {
 	cfg := config{Mode: ModeBlock, Paranoia: 1, Token: "secret"}
 	store := NewStore(10)
-	h := newHandler(engineFor(t, ModeBlock), store, cfg)
+	h := newHandler(engineFor(t, ModeBlock), store, NewBanList(), cfg)
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, forwardAuth("GET", "/ok", ""))
@@ -271,6 +272,89 @@ func TestLoadConfig_Validates(t *testing.T) {
 	c, err := loadConfig(env(map[string]string{}))
 	if err != nil || c.Mode != ModeDetect || c.Listen != "127.0.0.1:8044" || c.Paranoia != 1 {
 		t.Fatalf("defaults: %+v %v", c, err)
+	}
+}
+
+func TestBanList_ExactRangeAndExpiry(t *testing.T) {
+	b := NewBanList()
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	b.now = func() time.Time { return now }
+	err := b.Replace([]Ban{
+		{IP: "203.0.113.7", Expires: now.Add(time.Hour)},
+		{IP: "198.51.100.0/24", Expires: now.Add(time.Hour)},
+		{IP: "2001:db8::/64", Expires: now.Add(time.Hour)},
+		{IP: "192.0.2.1", Expires: now.Add(-time.Minute)}, // already expired: dropped
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ip, want := range map[string]bool{
+		"203.0.113.7": true, "198.51.100.42": true, "2001:db8::5": true, "::ffff:203.0.113.7": true,
+		"203.0.113.8": false, "192.0.2.1": false, "not-an-ip": false,
+	} {
+		if got := b.Banned(ip); got != want {
+			t.Errorf("Banned(%s) = %v, want %v", ip, got, want)
+		}
+	}
+	if page := b.List(); page.Count != 3 {
+		t.Fatalf("list: %+v", page)
+	}
+	now = now.Add(2 * time.Hour) // every entry lapses without another sync
+	if b.Banned("203.0.113.7") || b.Banned("198.51.100.42") || b.List().Count != 0 {
+		t.Fatal("bans must expire on their own")
+	}
+}
+
+func TestBanList_RejectsBadEntries(t *testing.T) {
+	b := NewBanList()
+	future := time.Now().Add(time.Hour)
+	if err := b.Replace([]Ban{{IP: "nope", Expires: future}}); err == nil {
+		t.Fatal("bad IP accepted")
+	}
+	if err := b.Replace([]Ban{{IP: "203.0.113.7"}}); err == nil {
+		t.Fatal("ban without expiry accepted")
+	}
+}
+
+func TestHandler_BannedClientRefusedInDetectMode(t *testing.T) {
+	cfg := config{Mode: ModeDetect, Paranoia: 1, Token: "secret"}
+	store := NewStore(10)
+	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), cfg)
+
+	put := func(auth, body string) int {
+		req := httptest.NewRequest("PUT", "/api/bans", strings.NewReader(body))
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	exp := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	if code := put("", `{"bans":[]}`); code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated PUT = %d", code)
+	}
+	if code := put("Bearer secret", `{"bans":[{"ip":"203.0.113.7","expires":"`+exp+`"}]}`); code != http.StatusOK {
+		t.Fatalf("PUT = %d", code)
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, forwardAuth("GET", "/clean", "")) // forwardAuth sends 203.0.113.7
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("banned client in detect mode = %d, want 403", rec.Code)
+	}
+	if s := store.Since(0, 10, ModeDetect, 1).Stats; s.Banned != 1 || s.Inspected != 0 {
+		t.Fatalf("stats: %+v", s)
+	}
+
+	// Replacing with an empty list lifts the ban.
+	if code := put("Bearer secret", `{"bans":[]}`); code != http.StatusOK {
+		t.Fatalf("clearing PUT = %d", code)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, forwardAuth("GET", "/clean", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("after clearing = %d", rec.Code)
 	}
 }
 

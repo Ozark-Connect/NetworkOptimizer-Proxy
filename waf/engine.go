@@ -136,7 +136,7 @@ func (e *Engine) Inspect(r *http.Request) Verdict {
 	method := firstNonEmpty(r.Header.Get("X-Forwarded-Method"), r.Method)
 	uri := firstNonEmpty(r.Header.Get("X-Forwarded-Uri"), r.URL.RequestURI())
 	host := firstNonEmpty(r.Header.Get("X-Forwarded-Host"), r.Host)
-	clientIP := clientAddress(r, e.trusted)
+	clientIP := e.ClientIP(r)
 
 	tx.ProcessConnection(clientIP, 0, "", 0)
 	tx.SetServerName(host)
@@ -229,6 +229,11 @@ func severityRank(s string) int {
 		return int(sev)
 	}
 	return 99
+}
+
+// ClientIP is the client of the request Traefik is asking about.
+func (e *Engine) ClientIP(r *http.Request) string {
+	return clientAddress(r, e.trusted)
 }
 
 // clientAddress is the right-most X-Forwarded-For entry that is not a trusted proxy. Never the

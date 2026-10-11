@@ -99,17 +99,23 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           newHandler(engine, store, cfg),
+		Handler:           newHandler(engine, store, NewBanList(), cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Printf("netopt-waf listening on %s, mode=%s, paranoia=%d, trusted proxies=%d", cfg.Listen, cfg.Mode, cfg.Paranoia, len(cfg.Trusted))
 	log.Fatal(srv.ListenAndServe())
 }
 
-func newHandler(engine *Engine, store *Store, cfg config) http.Handler {
+func newHandler(engine *Engine, store *Store, bans *BanList, cfg config) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/check", func(w http.ResponseWriter, r *http.Request) {
+		// Bans apply in detect mode too: they are Network Optimizer's decision, not a rule match.
+		if bans.Banned(engine.ClientIP(r)) {
+			store.RecordBanned()
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
 		v := engine.Inspect(r)
 		store.Record(v)
 		if v.Event != nil {
@@ -136,6 +142,36 @@ func newHandler(engine *Engine, store *Store, cfg config) http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(store.Since(since, limit, cfg.Mode, cfg.Paranoia))
+	})
+
+	mux.HandleFunc("GET /api/bans", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r, cfg.Token) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(bans.List())
+	})
+
+	// PUT replaces the whole list; Network Optimizer sends its full desired set every sync.
+	mux.HandleFunc("PUT /api/bans", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r, cfg.Token) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			Bans []Ban `json:"bans"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20)).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := bans.Replace(body.Bans); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(bans.List())
 	})
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {

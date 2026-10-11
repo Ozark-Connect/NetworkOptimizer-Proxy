@@ -39,6 +39,8 @@ type Stats struct {
 	Inspected uint64 `json:"inspected"`
 	Blocked   uint64 `json:"blocked"`
 	Detected  uint64 `json:"detected"`
+	// Requests refused by the ban list; they never reach the rules, so they are not Inspected.
+	Banned uint64 `json:"banned"`
 }
 
 // EventPage is the events API response.
@@ -99,6 +101,13 @@ func (s *Store) Record(v Verdict) {
 	if s.size < len(s.ring) {
 		s.size++
 	}
+}
+
+// RecordBanned counts a request refused by the ban list.
+func (s *Store) RecordBanned() {
+	s.mu.Lock()
+	s.stats.Banned++
+	s.mu.Unlock()
 }
 
 // Since returns up to limit events with Seq >= from, oldest first.
