@@ -100,7 +100,7 @@ func main() {
 		log.Fatal(err)
 	}
 	if cfg.Token == "" {
-		log.Print("WAF_API_TOKEN is not set: /api/events is disabled, Network Optimizer cannot read events")
+		log.Print("WAF_API_TOKEN is not set: the API is disabled, so Network Optimizer cannot read events or push its lists")
 	}
 
 	srv := &http.Server{
