@@ -52,7 +52,7 @@ The `windows/` directory contains the config templates used by the MSI build:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ACME_EMAIL` | Yes | - | Email for Let's Encrypt registration |
-| `CF_DNS_API_TOKEN` | Yes | - | Cloudflare **User API Token** (created under [My Profile > API Tokens](https://dash.cloudflare.com/profile/api-tokens)) with `Zone:Read` and `DNS:Edit` permissions. Account API Tokens (`cfat_` prefix) are not compatible — you need a User API Token (`cfut_` prefix). |
+| `CF_DNS_API_TOKEN` | Yes | - | Cloudflare **User API Token** (created under [My Profile > API Tokens](https://dash.cloudflare.com/profile/api-tokens)) with `Zone:Read` and `DNS:Edit` permissions. Account API Tokens (`cfat_` prefix) are not compatible — you need a User API Token (`cfut_` prefix). It is a different token from the one Network Optimizer's Cloudflare Edge Blocking uses (an Account API Token with Account Rule Lists). |
 | `LISTEN_IP` | No | `0.0.0.0` | Bind to a specific IP address |
 | `DNS_RESOLVERS` | No | `1.1.1.1:53,1.0.0.1:53` | DNS servers for ACME DNS-01 validation. Override on hosts where the default resolvers are unreachable (e.g., `127.0.0.1:53` on a Pi-hole host that can't DNAT its own traffic to external DNS). |
 | `ACME_PROPAGATION_DELAY` | No | `20` | Seconds to wait after creating the ACME TXT record before asking Let's Encrypt to validate. Raise it (e.g. `120`) if renewals intermittently fail with `Incorrect TXT record` / `No TXT record found` and then succeed on the next daily attempt. |
