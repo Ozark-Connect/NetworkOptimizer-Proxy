@@ -33,6 +33,7 @@ type config struct {
 	Capacity  int
 	Trusted   []netip.Prefix
 	StateDir  string
+	Apps      []string
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -68,6 +69,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return c, fmt.Errorf("WAF_TRUSTED_PROXIES: %w", err)
 	}
 	c.Trusted = trusted
+	apps, err := parseApps(getenv("WAF_APP_EXCLUSIONS"))
+	if err != nil {
+		return c, fmt.Errorf("WAF_APP_EXCLUSIONS: %w", err)
+	}
+	c.Apps = apps
 	return c, nil
 }
 
@@ -95,7 +101,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	engine, err := NewEngine(modes.Get().Mode, cfg.Paranoia, cfg.RulesDir, cfg.BodyLimit, cfg.Trusted)
+	exclusions, err := NewExclusionStore(cfg.StateDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	engine, err := NewEngine(modes.Get().Mode, cfg.Paranoia, cfg.RulesDir, cfg.BodyLimit, cfg.Trusted,
+		WithApps(cfg.Apps), WithExclusions(exclusions.List()))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -110,14 +121,14 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           newHandler(engine, store, NewBanList(), allow, modes, cfg),
+		Handler:           newHandler(engine, store, NewBanList(), allow, modes, exclusions, cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Printf("netopt-waf listening on %s, mode=%s, paranoia=%d, trusted proxies=%d", cfg.Listen, engine.Mode(), cfg.Paranoia, len(cfg.Trusted))
 	log.Fatal(srv.ListenAndServe())
 }
 
-func newHandler(engine *Engine, store *Store, bans *BanList, allow *AllowLists, modes *ModeStore, cfg config) http.Handler {
+func newHandler(engine *Engine, store *Store, bans *BanList, allow *AllowLists, modes *ModeStore, exclusions *ExclusionStore, cfg config) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/check", func(w http.ResponseWriter, r *http.Request) {
@@ -262,10 +273,58 @@ func newHandler(engine *Engine, store *Store, bans *BanList, allow *AllowLists, 
 		_ = json.NewEncoder(w).Encode(allow.List())
 	})
 
+	mux.HandleFunc("GET /api/exclusions", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r, cfg.Token) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		writeExclusions(w, engine, exclusions)
+	})
+
+	// PUT replaces the managed exclusions whole. The new set is built before it is saved or swapped
+	// in, so an entry that fails to build leaves the running rules and the saved set unchanged.
+	mux.HandleFunc("PUT /api/exclusions", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r, cfg.Token) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			Exclusions []Exclusion `json:"exclusions"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		list, err := validateExclusions(body.Exclusions)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := engine.SetExclusions(list); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := exclusions.Save(list); err != nil {
+			http.Error(w, "exclusions applied but not saved: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("%d managed exclusions set by the API", len(list))
+		writeExclusions(w, engine, exclusions)
+	})
+
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	return mux
+}
+
+// writeExclusions answers with the built-in app sets in use and the managed exclusions.
+func writeExclusions(w http.ResponseWriter, engine *Engine, exclusions *ExclusionStore) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(struct {
+		Apps       []string    `json:"apps"`
+		Exclusions []Exclusion `json:"exclusions"`
+	}{engine.Apps(), exclusions.List()})
 }
 
 // authorized requires "Authorization: Bearer <token>"; an unset token disables the API.

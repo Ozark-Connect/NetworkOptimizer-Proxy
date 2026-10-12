@@ -226,7 +226,7 @@ func TestParseTrusted(t *testing.T) {
 func TestHandler_CheckAndEventsApi(t *testing.T) {
 	cfg := config{Mode: ModeBlock, Paranoia: 1, Token: "secret"}
 	store := NewStore(10)
-	h := newHandler(engineFor(t, ModeBlock), store, NewBanList(), mustAllow(t, ""), testModes(t, "", ModeBlock), cfg)
+	h := newHandler(engineFor(t, ModeBlock), store, NewBanList(), mustAllow(t, ""), testModes(t, "", ModeBlock), &ExclusionStore{}, cfg)
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, forwardAuth("GET", "/ok", ""))
@@ -346,7 +346,7 @@ func TestBanList_RejectsBadEntries(t *testing.T) {
 func TestHandler_BannedClientRefusedInDetectMode(t *testing.T) {
 	cfg := config{Mode: ModeDetect, Paranoia: 1, Token: "secret"}
 	store := NewStore(10)
-	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), mustAllow(t, ""), testModes(t, "", ModeDetect), cfg)
+	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), mustAllow(t, ""), testModes(t, "", ModeDetect), &ExclusionStore{}, cfg)
 
 	put := func(auth, body string) int {
 		req := httptest.NewRequest("PUT", "/api/bans", strings.NewReader(body))
@@ -409,7 +409,7 @@ func TestHandler_AllowList(t *testing.T) {
 	cfg := config{Mode: ModeDetect, Paranoia: 1, Token: "secret"}
 	store := NewStore(10)
 	dir := t.TempDir()
-	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), mustAllow(t, dir), testModes(t, "", ModeDetect), cfg)
+	h := newHandler(engineFor(t, ModeDetect), store, NewBanList(), mustAllow(t, dir), testModes(t, "", ModeDetect), &ExclusionStore{}, cfg)
 
 	check := func(path string) int {
 		req := forwardAuth("GET", "/clean", "") // from 203.0.113.7
@@ -492,7 +492,7 @@ func TestHandler_ModeSwitchesAndPersists(t *testing.T) {
 	cfg := config{Mode: ModeDetect, Paranoia: 1, Token: "secret"}
 	engine := engineFor(t, ModeDetect)
 	modes := testModes(t, dir, ModeDetect)
-	h := newHandler(engine, NewStore(10), NewBanList(), mustAllow(t, ""), modes, cfg)
+	h := newHandler(engine, NewStore(10), NewBanList(), mustAllow(t, ""), modes, &ExclusionStore{}, cfg)
 
 	put := func(body string) int {
 		req := httptest.NewRequest("PUT", "/api/mode", strings.NewReader(body))

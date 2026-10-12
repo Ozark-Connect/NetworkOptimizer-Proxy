@@ -35,13 +35,30 @@ type Engine struct {
 	paranoia  int
 	rulesDir  string
 	bodyLimit int
+
+	buildMu sync.Mutex // one rebuild at a time, so a mode switch and an exclusion change never cross
+	apps    []string
+	managed []Exclusion
 }
+
+// EngineOption adjusts what NewEngine loads beyond the CRS and rulesDir.
+type EngineOption func(*Engine)
+
+// WithApps loads these built-in app exclusion sets instead of all of them.
+func WithApps(names []string) EngineOption { return func(e *Engine) { e.apps = names } }
+
+// WithExclusions loads managed exclusions, already validated.
+func WithExclusions(list []Exclusion) EngineOption { return func(e *Engine) { e.managed = list } }
 
 // NewEngine builds a WAF from the embedded CRS plus optional files in rulesDir: CRS plugins in
 // plugins/, before-crs.conf (runtime ctl exclusions), and after-crs.conf (SecRuleRemoveById and
 // friends). trusted lists the proxies whose X-Forwarded-For entries are skipped to find the client.
-func NewEngine(mode string, paranoia int, rulesDir string, bodyLimit int, trusted []netip.Prefix) (*Engine, error) {
-	e := &Engine{trusted: trusted, paranoia: paranoia, rulesDir: rulesDir, bodyLimit: bodyLimit}
+// Every built-in app exclusion set loads unless WithApps narrows it.
+func NewEngine(mode string, paranoia int, rulesDir string, bodyLimit int, trusted []netip.Prefix, opts ...EngineOption) (*Engine, error) {
+	e := &Engine{trusted: trusted, paranoia: paranoia, rulesDir: rulesDir, bodyLimit: bodyLimit, apps: AppNames()}
+	for _, o := range opts {
+		o(e)
+	}
 	if err := e.SetMode(mode); err != nil {
 		return nil, err
 	}
@@ -60,7 +77,9 @@ func (e *Engine) SetMode(mode string) error {
 	if mode != ModeDetect && mode != ModeBlock {
 		return fmt.Errorf("mode must be %q or %q, got %q", ModeDetect, ModeBlock, mode)
 	}
-	waf, err := buildWAF(mode, e.paranoia, e.rulesDir, e.bodyLimit)
+	e.buildMu.Lock()
+	defer e.buildMu.Unlock()
+	waf, err := buildWAF(mode, e.paranoia, e.rulesDir, e.bodyLimit, e.ruleText(e.managed))
 	if err != nil {
 		return err
 	}
@@ -70,7 +89,31 @@ func (e *Engine) SetMode(mode string) error {
 	return nil
 }
 
-func buildWAF(mode string, paranoia int, rulesDir string, bodyLimit int) (coraza.WAF, error) {
+// SetExclusions rebuilds the WAF with these managed exclusions in the current mode. A list that
+// fails to build is refused and the running WAF is left as it was.
+func (e *Engine) SetExclusions(list []Exclusion) error {
+	e.buildMu.Lock()
+	defer e.buildMu.Unlock()
+	mode := e.Mode()
+	waf, err := buildWAF(mode, e.paranoia, e.rulesDir, e.bodyLimit, e.ruleText(list))
+	if err != nil {
+		return err
+	}
+	e.mu.Lock()
+	e.waf, e.managed = waf, list
+	e.mu.Unlock()
+	return nil
+}
+
+// Apps lists the built-in app exclusion sets loaded.
+func (e *Engine) Apps() []string { return append([]string{}, e.apps...) }
+
+// ruleText is the built-in app sets, then the managed exclusions, loaded ahead of before-crs.conf.
+func (e *Engine) ruleText(managed []Exclusion) string {
+	return appDirectives(e.apps) + renderExclusions(managed)
+}
+
+func buildWAF(mode string, paranoia int, rulesDir string, bodyLimit int, builtIn string) (coraza.WAF, error) {
 	engineMode := "DetectionOnly"
 	if mode == ModeBlock {
 		engineMode = "On"
@@ -103,6 +146,7 @@ func buildWAF(mode string, paranoia int, rulesDir string, bodyLimit int) (coraza
 		fmt.Sprintf(`SecAction "id:900000,phase:1,pass,t:none,nolog,setvar:tx.blocking_paranoia_level=%d"`, paranoia),
 		parts[0],
 		parts[1],
+		builtIn,
 		parts[2],
 		"Include @owasp_crs/*.conf",
 		parts[3],

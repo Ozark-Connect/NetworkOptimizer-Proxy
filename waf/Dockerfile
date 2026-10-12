@@ -3,6 +3,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY *.go ./
+COPY apps ./apps
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /netopt-waf .
 # A named volume takes this directory's owner on first use, so nonroot can write its state.
 RUN mkdir -p /state
