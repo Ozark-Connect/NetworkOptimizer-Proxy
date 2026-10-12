@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +22,9 @@ import (
 
 // CRS rule that fires when the inbound anomaly score crosses the blocking threshold.
 const inboundAnomalyRuleID = 949110
+
+// appHeader carries a router's app opt-in to the built-in app rules; never taken from the client.
+const appHeader = "X-Netopt-App"
 
 var totalScorePattern = regexp.MustCompile(`Total Score: (\d+)`)
 
@@ -44,16 +48,13 @@ type Engine struct {
 // EngineOption adjusts what NewEngine loads beyond the CRS and rulesDir.
 type EngineOption func(*Engine)
 
-// WithApps loads these built-in app exclusion sets instead of all of them.
-func WithApps(names []string) EngineOption { return func(e *Engine) { e.apps = names } }
-
 // WithExclusions loads managed exclusions, already validated.
 func WithExclusions(list []Exclusion) EngineOption { return func(e *Engine) { e.managed = list } }
 
 // NewEngine builds a WAF from the embedded CRS plus optional files in rulesDir: CRS plugins in
 // plugins/, before-crs.conf (runtime ctl exclusions), and after-crs.conf (SecRuleRemoveById and
 // friends). trusted lists the proxies whose X-Forwarded-For entries are skipped to find the client.
-// Every built-in app exclusion set loads unless WithApps narrows it.
+// Every built-in app exclusion set loads; each applies only on routers that name it (/check?app=).
 func NewEngine(mode string, paranoia int, rulesDir string, bodyLimit int, trusted []netip.Prefix, opts ...EngineOption) (*Engine, error) {
 	e := &Engine{trusted: trusted, paranoia: paranoia, rulesDir: rulesDir, bodyLimit: bodyLimit, apps: AppNames()}
 	for _, o := range opts {
@@ -105,7 +106,7 @@ func (e *Engine) SetExclusions(list []Exclusion) error {
 	return nil
 }
 
-// Apps lists the built-in app exclusion sets loaded.
+// Apps lists the built-in app exclusion sets a router can opt into.
 func (e *Engine) Apps() []string { return append([]string{}, e.apps...) }
 
 // ruleText is the built-in app sets, then the managed exclusions, loaded ahead of before-crs.conf.
@@ -226,7 +227,7 @@ func (e *Engine) Inspect(r *http.Request) Verdict {
 	tx.SetServerName(host)
 	tx.ProcessURI(uri, method, r.Proto)
 	for name, values := range r.Header {
-		if isAuthHopHeader(name) {
+		if isAuthHopHeader(name) || http.CanonicalHeaderKey(name) == appHeader {
 			continue
 		}
 		for _, v := range values {
@@ -234,6 +235,10 @@ func (e *Engine) Inspect(r *http.Request) Verdict {
 		}
 	}
 	tx.AddRequestHeader("Host", host)
+	// The router's opt-in (/check?app=grafana) reaches the app rules as a header only the WAF sets.
+	if app := r.URL.Query().Get("app"); app != "" && slices.Contains(e.apps, app) {
+		tx.AddRequestHeader(appHeader, app)
+	}
 	// net/http moves these out of r.Header; without them CRS 920180 flags every POST.
 	if r.ContentLength > 0 {
 		tx.AddRequestHeader("Content-Length", strconv.FormatInt(r.ContentLength, 10))

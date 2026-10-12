@@ -22,45 +22,52 @@ func jsonPost(uri, body string) *http.Request {
 	return r
 }
 
-func TestGrafanaApp_QueryEndpointsPass(t *testing.T) {
+// grafanaRoute is a request through a router whose forwardAuth address is /check?app=grafana.
+func grafanaRoute(uri, body string) *http.Request {
+	r := jsonPost(uri, body)
+	r.URL.RawQuery = "app=grafana"
+	return r
+}
+
+func TestGrafanaApp_QueryEndpointsPassOnItsRouter(t *testing.T) {
 	e := engineFor(t, ModeDetect)
 	for name, body := range grafanaBodies {
 		for _, uri := range []string{"/api/ds/query?ds_type=influxdb", "/grafana/api/ds/query", "/api/dashboards/db"} {
-			if v := e.Inspect(jsonPost(uri, body)); v.Event != nil {
+			if v := e.Inspect(grafanaRoute(uri, body)); v.Event != nil {
 				t.Errorf("%s on %s flagged: %+v", name, uri, v.Event.Rules)
 			}
 		}
-		// The same body anywhere else is still inspected.
-		if v := e.Inspect(jsonPost("/api/items", body)); v.Event == nil {
-			t.Errorf("%s on /api/items not flagged: the built-in set reached past Grafana's paths", name)
+		// The same body on another path of the Grafana router is still inspected.
+		if v := e.Inspect(grafanaRoute("/api/items", body)); v.Event == nil {
+			t.Errorf("%s on /api/items not flagged: the set reached past Grafana's query paths", name)
 		}
 	}
 }
 
-func TestGrafanaApp_CanBeTurnedOff(t *testing.T) {
-	e, err := NewEngine(ModeDetect, 1, "", 10<<20, nil, WithApps(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v := e.Inspect(jsonPost("/api/ds/query", grafanaBodies["flux vars"])); v.Event == nil {
-		t.Fatal("with no app sets, a Grafana query should be flagged")
-	}
-}
+func TestGrafanaApp_OnlyWhereTheRouterOptsIn(t *testing.T) {
+	e := engineFor(t, ModeDetect)
+	body := grafanaBodies["flux vars"]
 
-func TestParseApps(t *testing.T) {
-	if got, _ := parseApps(""); len(got) == 0 || got[0] != "grafana" {
-		t.Fatalf("default should load every set, got %v", got)
+	if v := e.Inspect(jsonPost("/api/ds/query", body)); v.Event == nil {
+		t.Error("a router without app=grafana must inspect Grafana-shaped paths in full")
 	}
-	if got, _ := parseApps("none"); got != nil {
-		t.Fatalf("none should load nothing, got %v", got)
+	forged := jsonPost("/api/ds/query", body)
+	forged.Header.Set("X-Netopt-App", "grafana")
+	if v := e.Inspect(forged); v.Event == nil {
+		t.Error("a client-sent X-Netopt-App must not opt a request in")
 	}
-	if _, err := parseApps("grafana,wordpress"); err == nil {
-		t.Fatal("an unknown app should be refused")
+	if v := e.Inspect(grafanaRoute("/index.php/api/ds/query", body)); v.Event == nil {
+		t.Error("a PATH_INFO path must not match the Grafana endpoints")
+	}
+	unknown := jsonPost("/api/ds/query", body)
+	unknown.URL.RawQuery = "app=nope"
+	if v := e.Inspect(unknown); v.Event == nil {
+		t.Error("an unknown app must change nothing")
 	}
 }
 
 func TestExclusion_ScopedToHostMethodAndPath(t *testing.T) {
-	e, err := NewEngine(ModeDetect, 1, "", 10<<20, nil, WithApps(nil))
+	e, err := NewEngine(ModeDetect, 1, "", 10<<20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +139,7 @@ func TestHandler_ExclusionsPersistAndRefuseBadSets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := NewEngine(ModeDetect, 1, "", 10<<20, nil, WithApps(nil))
+	engine, err := NewEngine(ModeDetect, 1, "", 10<<20, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

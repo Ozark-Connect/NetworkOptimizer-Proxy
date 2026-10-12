@@ -33,7 +33,6 @@ type config struct {
 	Capacity  int
 	Trusted   []netip.Prefix
 	StateDir  string
-	Apps      []string
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -69,11 +68,6 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return c, fmt.Errorf("WAF_TRUSTED_PROXIES: %w", err)
 	}
 	c.Trusted = trusted
-	apps, err := parseApps(getenv("WAF_APP_EXCLUSIONS"))
-	if err != nil {
-		return c, fmt.Errorf("WAF_APP_EXCLUSIONS: %w", err)
-	}
-	c.Apps = apps
 	return c, nil
 }
 
@@ -106,7 +100,7 @@ func main() {
 		log.Fatal(err)
 	}
 	engine, err := NewEngine(modes.Get().Mode, cfg.Paranoia, cfg.RulesDir, cfg.BodyLimit, cfg.Trusted,
-		WithApps(cfg.Apps), WithExclusions(exclusions.List()))
+		WithExclusions(exclusions.List()))
 	if err != nil {
 		log.Fatal(err)
 	}

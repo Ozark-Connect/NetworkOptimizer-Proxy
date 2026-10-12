@@ -12,7 +12,8 @@ import (
 	"sync"
 )
 
-// Built-in exclusion sets for self-hosted apps CRS has no plugin for, one file per app.
+// Built-in exclusion sets for self-hosted apps CRS has no plugin for, one file per app. Each set
+// applies only on routers that opt in with /check?app=<name>.
 //
 //go:embed apps/*.conf
 var appFiles embed.FS
@@ -28,38 +29,12 @@ func AppNames() []string {
 	return names
 }
 
-// parseApps reads WAF_APP_EXCLUSIONS: empty means every built-in set, "none" means none.
-func parseApps(v string) ([]string, error) {
-	v = strings.TrimSpace(strings.ToLower(v))
-	if v == "" {
-		return AppNames(), nil
-	}
-	if v == "none" {
-		return nil, nil
-	}
-	known := map[string]bool{}
-	for _, n := range AppNames() {
-		known[n] = true
-	}
-	var out []string
-	for _, n := range strings.Split(v, ",") {
-		if n = strings.TrimSpace(n); n == "" {
-			continue
-		}
-		if !known[n] {
-			return nil, fmt.Errorf("unknown app %q (built-in: %s, or none)", n, strings.Join(AppNames(), ", "))
-		}
-		out = append(out, n)
-	}
-	return out, nil
-}
-
 func appDirectives(names []string) string {
 	var b strings.Builder
 	for _, n := range names {
 		data, err := appFiles.ReadFile("apps/" + n + ".conf")
 		if err != nil {
-			continue // parseApps only passes known names
+			continue // names come from AppNames
 		}
 		b.Write(data)
 		b.WriteString("\n")

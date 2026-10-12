@@ -70,7 +70,6 @@ services:
       WAF_MODE: ${WAF_MODE:-detect}
       WAF_PARANOIA: ${WAF_PARANOIA:-1}
       WAF_API_TOKEN: ${WAF_API_TOKEN:-}
-      WAF_APP_EXCLUSIONS: ${WAF_APP_EXCLUSIONS:-}
       # Same list as Traefik's, so the WAF skips those hops to find the client.
       WAF_TRUSTED_PROXIES: ${FORWARDED_TRUSTED_IPS:-}
       # Allow lists Network Optimizer pushes are kept here, so a restart never reopens a route.
