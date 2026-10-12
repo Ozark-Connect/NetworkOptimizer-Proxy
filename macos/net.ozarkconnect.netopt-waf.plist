@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   launchd job for netopt-waf (macOS native install)
-  Location on target: ~/Library/LaunchAgents/net.ozarkconnect.netopt-waf.plist
-  Load:   launchctl load ~/Library/LaunchAgents/net.ozarkconnect.netopt-waf.plist
-  Unload: launchctl unload ~/Library/LaunchAgents/net.ozarkconnect.netopt-waf.plist
+  Deploy to: /Library/LaunchDaemons/net.ozarkconnect.netopt-waf.plist (root:wheel, 644)
+  A daemon, like Traefik's: routers with the waf middleware answer 500 until it runs.
+  Load:   sudo launchctl bootstrap system /Library/LaunchDaemons/net.ozarkconnect.netopt-waf.plist
+  Unload: sudo launchctl bootout system/net.ozarkconnect.netopt-waf
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
