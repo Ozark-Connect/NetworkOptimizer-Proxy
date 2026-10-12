@@ -10,6 +10,8 @@ import (
 
 // Grafana request bodies, each of which trips CRS at paranoia 1 outside the built-in set.
 var grafanaBodies = map[string]string{
+	// The Flux query builder's default shape: "timeRangeStop)" then r["..."] trips 941370 (XSS).
+	"flux builder": `{"queries":[{"refId":"A","query":"from(bucket: \"b\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r[\"_measurement\"] == \"cpu\")"}]}`,
 	"flux vars": `{"queries":[{"refId":"A","query":"from(bucket: \"${bucket}\") |> range(start: ${__from:date:iso}, stop: ${__to:date:iso}) |> filter(fn: (r) => r.host =~ /^${host:regex}$/)"}]}`,
 	"influxql":  `{"queries":[{"refId":"A","query":"SELECT mean(\"usage_idle\") FROM \"cpu\" WHERE (\"host\" = 'nas') AND $timeFilter GROUP BY time($__interval) fill(null)","rawQuery":true}]}`,
 	"mysql":     `{"queries":[{"refId":"A","rawSql":"SELECT $__timeGroupAlias(created_at, '5m'), count(*) AS value FROM orders WHERE $__timeFilter(created_at) AND status = 'paid' GROUP BY 1 ORDER BY 1"}]}`,
