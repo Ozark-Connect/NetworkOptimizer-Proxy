@@ -69,6 +69,7 @@ services:
       WAF_LISTEN: ${WAF_LISTEN:-127.0.0.1:8044}
       WAF_MODE: ${WAF_MODE:-detect}
       WAF_PARANOIA: ${WAF_PARANOIA:-1}
+      WAF_ALLOWED_METHODS: ${WAF_ALLOWED_METHODS:-}
       WAF_API_TOKEN: ${WAF_API_TOKEN:-}
       # Same list as Traefik's, so the WAF skips those hops to find the client.
       WAF_TRUSTED_PROXIES: ${FORWARDED_TRUSTED_IPS:-}

@@ -33,6 +33,7 @@ type config struct {
 	Capacity  int
 	Trusted   []netip.Prefix
 	StateDir  string
+	Methods   string
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -45,6 +46,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		Paranoia:  1,
 		BodyLimit: 10 << 20,
 		Capacity:  10000,
+		Methods:   DefaultAllowedMethods,
 	}
 	if c.Mode != ModeDetect && c.Mode != ModeBlock {
 		return c, fmt.Errorf("WAF_MODE must be %q or %q, got %q", ModeDetect, ModeBlock, c.Mode)
@@ -63,12 +65,38 @@ func loadConfig(getenv func(string) string) (config, error) {
 		}
 		c.BodyLimit = n
 	}
+	if v := getenv("WAF_ALLOWED_METHODS"); v != "" {
+		methods, err := parseMethods(v)
+		if err != nil {
+			return c, fmt.Errorf("WAF_ALLOWED_METHODS: %w", err)
+		}
+		c.Methods = methods
+	}
 	trusted, err := parseTrusted(getenv("WAF_TRUSTED_PROXIES"))
 	if err != nil {
 		return c, fmt.Errorf("WAF_TRUSTED_PROXIES: %w", err)
 	}
 	c.Trusted = trusted
 	return c, nil
+}
+
+// parseMethods takes methods separated by spaces or commas and returns them upper-cased and
+// space-separated. Only letters pass, so the value cannot break out of the CRS setvar.
+func parseMethods(v string) (string, error) {
+	fields := strings.FieldsFunc(v, func(r rune) bool { return r == ' ' || r == ',' })
+	if len(fields) == 0 {
+		return "", fmt.Errorf("no methods in %q", v)
+	}
+	for i, f := range fields {
+		f = strings.ToUpper(f)
+		for _, r := range f {
+			if r < 'A' || r > 'Z' {
+				return "", fmt.Errorf("%q is not a method name", fields[i])
+			}
+		}
+		fields[i] = f
+	}
+	return strings.Join(fields, " "), nil
 }
 
 func envOr(getenv func(string) string, key, fallback string) string {
@@ -100,7 +128,7 @@ func main() {
 		log.Fatal(err)
 	}
 	engine, err := NewEngine(modes.Get().Mode, cfg.Paranoia, cfg.RulesDir, cfg.BodyLimit, cfg.Trusted,
-		WithExclusions(exclusions.List()))
+		WithExclusions(exclusions.List()), WithAllowedMethods(cfg.Methods))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -118,7 +146,8 @@ func main() {
 		Handler:           newHandler(engine, store, NewBanList(), allow, modes, exclusions, cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.Printf("netopt-waf listening on %s, mode=%s, paranoia=%d, trusted proxies=%d", cfg.Listen, engine.Mode(), cfg.Paranoia, len(cfg.Trusted))
+	log.Printf("netopt-waf listening on %s, mode=%s, paranoia=%d, methods=%s, trusted proxies=%d",
+		cfg.Listen, engine.Mode(), cfg.Paranoia, cfg.Methods, len(cfg.Trusted))
 	log.Fatal(srv.ListenAndServe())
 }
 

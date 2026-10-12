@@ -296,9 +296,38 @@ func TestLoadConfig_Validates(t *testing.T) {
 	if _, err := loadConfig(env(map[string]string{"WAF_TRUSTED_PROXIES": "not-an-ip"})); err == nil {
 		t.Fatal("bad trusted proxy accepted")
 	}
+	if _, err := loadConfig(env(map[string]string{"WAF_ALLOWED_METHODS": "GET POST'"})); err == nil {
+		t.Fatal("method with a quote accepted")
+	}
 	c, err := loadConfig(env(map[string]string{}))
-	if err != nil || c.Mode != ModeDetect || c.Listen != "127.0.0.1:8044" || c.Paranoia != 1 {
+	if err != nil || c.Mode != ModeDetect || c.Listen != "127.0.0.1:8044" || c.Paranoia != 1 || c.Methods != DefaultAllowedMethods {
 		t.Fatalf("defaults: %+v %v", c, err)
+	}
+	if c, err = loadConfig(env(map[string]string{"WAF_ALLOWED_METHODS": "get, post,PROPFIND"})); err != nil || c.Methods != "GET POST PROPFIND" {
+		t.Fatalf("methods: %q %v", c.Methods, err)
+	}
+}
+
+// REST verbs pass by default; anything else outside the list still scores 911100 and blocks.
+func TestAllowedMethods_RestVerbsPassOthersBlock(t *testing.T) {
+	e := engineFor(t, ModeBlock)
+	for _, m := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+		if v := e.Inspect(forwardAuth(m, "/api/items/42", "")); v.Blocked {
+			t.Errorf("%s blocked: %+v", m, v.Event)
+		}
+	}
+	for _, m := range []string{"TRACE", "PROPFIND"} {
+		if v := e.Inspect(forwardAuth(m, "/api/items/42", "")); !v.Blocked {
+			t.Errorf("%s allowed", m)
+		}
+	}
+
+	narrow, err := NewEngine(ModeBlock, 1, "", 10<<20, nil, WithAllowedMethods("GET HEAD POST OPTIONS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := narrow.Inspect(forwardAuth("DELETE", "/api/items/42", "")); !v.Blocked {
+		t.Error("DELETE allowed by a list without it")
 	}
 }
 

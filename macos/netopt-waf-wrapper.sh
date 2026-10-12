@@ -6,6 +6,7 @@
 #   WAF_MODE=detect            # starting mode, detect or block; Network Optimizer can switch it
 #   WAF_PARANOIA=1             # OWASP CRS paranoia level 1-4
 #   WAF_API_TOKEN=<openssl rand -hex 32>
+#   WAF_ALLOWED_METHODS=...    # optional; default GET HEAD POST OPTIONS PUT PATCH DELETE
 #
 # Build the binary once from this repo: (cd waf && go build -o /usr/local/bin/netopt-waf .)
 # Optional exclusions: before-crs.conf / after-crs.conf in /usr/local/etc/netopt-waf/

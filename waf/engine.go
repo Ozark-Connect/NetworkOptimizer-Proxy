@@ -43,7 +43,12 @@ type Engine struct {
 	buildMu sync.Mutex // one rebuild at a time, so a mode switch and an exclusion change never cross
 	apps    []string
 	managed []Exclusion
+	methods string
 }
+
+// DefaultAllowedMethods adds the REST verbs to CRS's GET HEAD POST OPTIONS. Without them rule
+// 911100 scores every PUT, PATCH, and DELETE as critical, which alone blocks it in block mode.
+const DefaultAllowedMethods = "GET HEAD POST OPTIONS PUT PATCH DELETE"
 
 // EngineOption adjusts what NewEngine loads beyond the CRS and rulesDir.
 type EngineOption func(*Engine)
@@ -51,12 +56,16 @@ type EngineOption func(*Engine)
 // WithExclusions loads managed exclusions, already validated.
 func WithExclusions(list []Exclusion) EngineOption { return func(e *Engine) { e.managed = list } }
 
+// WithAllowedMethods replaces DefaultAllowedMethods; methods is space-separated and already validated.
+func WithAllowedMethods(methods string) EngineOption { return func(e *Engine) { e.methods = methods } }
+
 // NewEngine builds a WAF from the embedded CRS plus optional files in rulesDir: CRS plugins in
 // plugins/, before-crs.conf (runtime ctl exclusions), and after-crs.conf (SecRuleRemoveById and
 // friends). trusted lists the proxies whose X-Forwarded-For entries are skipped to find the client.
 // Every built-in app exclusion set loads; each applies only on routers that name it (/check?app=).
 func NewEngine(mode string, paranoia int, rulesDir string, bodyLimit int, trusted []netip.Prefix, opts ...EngineOption) (*Engine, error) {
-	e := &Engine{trusted: trusted, paranoia: paranoia, rulesDir: rulesDir, bodyLimit: bodyLimit, apps: AppNames()}
+	e := &Engine{trusted: trusted, paranoia: paranoia, rulesDir: rulesDir, bodyLimit: bodyLimit, apps: AppNames(),
+		methods: DefaultAllowedMethods}
 	for _, o := range opts {
 		o(e)
 	}
@@ -80,7 +89,7 @@ func (e *Engine) SetMode(mode string) error {
 	}
 	e.buildMu.Lock()
 	defer e.buildMu.Unlock()
-	waf, err := buildWAF(mode, e.paranoia, e.rulesDir, e.bodyLimit, e.ruleText(e.managed))
+	waf, err := buildWAF(mode, e.paranoia, e.methods, e.rulesDir, e.bodyLimit, e.ruleText(e.managed))
 	if err != nil {
 		return err
 	}
@@ -96,7 +105,7 @@ func (e *Engine) SetExclusions(list []Exclusion) error {
 	e.buildMu.Lock()
 	defer e.buildMu.Unlock()
 	mode := e.Mode()
-	waf, err := buildWAF(mode, e.paranoia, e.rulesDir, e.bodyLimit, e.ruleText(list))
+	waf, err := buildWAF(mode, e.paranoia, e.methods, e.rulesDir, e.bodyLimit, e.ruleText(list))
 	if err != nil {
 		return err
 	}
@@ -114,7 +123,7 @@ func (e *Engine) ruleText(managed []Exclusion) string {
 	return appDirectives(e.apps) + renderExclusions(managed)
 }
 
-func buildWAF(mode string, paranoia int, rulesDir string, bodyLimit int, builtIn string) (coraza.WAF, error) {
+func buildWAF(mode string, paranoia int, methods, rulesDir string, bodyLimit int, builtIn string) (coraza.WAF, error) {
 	engineMode := "DetectionOnly"
 	if mode == ModeBlock {
 		engineMode = "On"
@@ -145,6 +154,8 @@ func buildWAF(mode string, paranoia int, rulesDir string, bodyLimit int, builtIn
 		"SecAuditEngine Off",
 		"Include @crs-setup.conf.example",
 		fmt.Sprintf(`SecAction "id:900000,phase:1,pass,t:none,nolog,setvar:tx.blocking_paranoia_level=%d"`, paranoia),
+		// 900200 is the CRS setup slot for allowed methods; set before the rules, CRS keeps it.
+		fmt.Sprintf(`SecAction "id:900200,phase:1,pass,t:none,nolog,setvar:'tx.allowed_methods=%s'"`, methods),
 		parts[0],
 		parts[1],
 		builtIn,
