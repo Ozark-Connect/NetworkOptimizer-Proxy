@@ -50,7 +50,10 @@ type EventPage struct {
 	// Instance changes on every restart; a reader holding a cursor from another instance starts over.
 	Instance string    `json:"instance"`
 	Started  time.Time `json:"started"`
-	Mode     string    `json:"mode"`
+	// The netopt-waf release and the CRS release compiled into it.
+	Version string `json:"version"`
+	CRS     string `json:"crs,omitempty"`
+	Mode    string `json:"mode"`
 	// When the current mode took effect.
 	ModeSince time.Time `json:"modeSince"`
 	Paranoia  int       `json:"paranoia"`

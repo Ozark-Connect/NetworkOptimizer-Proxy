@@ -58,9 +58,11 @@ services:
 
   # Web Application Firewall (opt-in). Set COMPOSE_PROFILES=waf in .env to run it, then
   # add the "waf" middleware to a router in dynamic/config.yml. See the README.
+  # Pulls the release image; WAF_IMAGE_TAG pins one (1.2.3), and the default follows major 1.
+  # Without a published image, "docker compose up" builds it from ./waf instead.
   netopt-waf:
+    image: ghcr.io/ozark-connect/netopt-waf:${WAF_IMAGE_TAG:-1}
     build: ./waf
-    image: netopt-waf:local
     container_name: netopt-waf
     restart: unless-stopped
     network_mode: host

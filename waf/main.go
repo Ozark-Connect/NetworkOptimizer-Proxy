@@ -108,7 +108,12 @@ func envOr(getenv func(string) string, key, fallback string) string {
 
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "probe /healthz on WAF_LISTEN and exit")
+	showVersion := flag.Bool("version", false, "print the netopt-waf and CRS versions and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("netopt-waf %s (CRS %s)\n", Version, CRSVersion)
+		return
+	}
 
 	cfg, err := loadConfig(os.Getenv)
 	if err != nil {
@@ -146,8 +151,8 @@ func main() {
 		Handler:           newHandler(engine, store, NewBanList(), allow, modes, exclusions, cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.Printf("netopt-waf listening on %s, mode=%s, paranoia=%d, methods=%s, trusted proxies=%d",
-		cfg.Listen, engine.Mode(), cfg.Paranoia, cfg.Methods, len(cfg.Trusted))
+	log.Printf("netopt-waf %s (CRS %s) listening on %s, mode=%s, paranoia=%d, methods=%s, trusted proxies=%d",
+		Version, CRSVersion, cfg.Listen, engine.Mode(), cfg.Paranoia, cfg.Methods, len(cfg.Trusted))
 	log.Fatal(srv.ListenAndServe())
 }
 
@@ -196,6 +201,7 @@ func newHandler(engine *Engine, store *Store, bans *BanList, allow *AllowLists, 
 		w.Header().Set("Content-Type", "application/json")
 		page := store.Since(since, limit, engine.Mode(), cfg.Paranoia)
 		page.ModeSince = modes.Get().Since
+		page.Version, page.CRS = Version, CRSVersion
 		_ = json.NewEncoder(w).Encode(page)
 	})
 

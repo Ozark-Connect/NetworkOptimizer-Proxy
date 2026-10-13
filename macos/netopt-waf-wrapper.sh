@@ -8,7 +8,7 @@
 #   WAF_API_TOKEN=<openssl rand -hex 32>
 #   WAF_ALLOWED_METHODS=...    # optional; default GET HEAD POST OPTIONS PUT PATCH DELETE
 #
-# Build the binary once from this repo: (cd waf && go build -o /usr/local/bin/netopt-waf .)
+# Install or update the binary with macos/update-waf.sh (or build it: cd waf && go build -o /usr/local/bin/netopt-waf .)
 # Optional exclusions: before-crs.conf / after-crs.conf in /usr/local/etc/netopt-waf/
 # (copy them from waf-rules/*.example).
 

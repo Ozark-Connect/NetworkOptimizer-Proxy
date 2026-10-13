@@ -204,7 +204,7 @@ Notes:
 It complements UniFi CyberSecure rather than replacing it: the gateway's IPS sees packets, and only the proxy that terminates TLS sees the decrypted request.
 
 1. In `.env`, set `COMPOSE_PROFILES=waf`.
-2. Run `bash setup.sh` once to create `waf-rules/before-crs.conf`, `waf-rules/after-crs.conf`, and `waf-rules/plugins/`, and to generate `WAF_API_TOKEN` in `.env` if it is empty. Then `docker compose up -d`. The first start builds the image. Re-running it on an existing install is safe: it only creates what is missing and never replaces a token.
+2. Run `bash setup.sh` once to create `waf-rules/before-crs.conf`, `waf-rules/after-crs.conf`, and `waf-rules/plugins/`, and to generate `WAF_API_TOKEN` in `.env` if it is empty. Then `docker compose up -d`. The first start pulls the image (or builds it from `waf/` when no release is published). Re-running it on an existing install is safe: it only creates what is missing and never replaces a token.
 3. Make sure `dynamic/config.yml` defines the `waf` middleware (copy it from `config.example.yml` on installs that predate it), then add `- waf` to a router's `middlewares`.
 4. In Network Optimizer, switch to the site this proxy serves and open Settings - Security & Alerts - Web Application Firewall (also under Threat Intelligence - Web Application Firewall - Setup). Enter the URL and the token (`grep WAF_API_TOKEN .env`). `http://127.0.0.1:8044` works when the proxy runs on the same host as Network Optimizer, or on the same host as that site's On-Site Agent: a site reached through its agent has the agent make the connection. Each site can have its own WAF, or none.
 
@@ -262,6 +262,18 @@ SecRule REQUEST_HEADERS:Host "!@streq blog.yourdomain.com" \
 
 Plugins that read `.data` files are not supported: only the `.conf` files are loaded.
 
+### Updating
+
+The OWASP CRS rules are compiled into `netopt-waf`, so new rules arrive with a new `netopt-waf` release, never on their own. Each release names the CRS version it carries, and Network Optimizer's Web Application Firewall page shows the version each site's WAF runs and says when a newer one is out.
+
+- **Docker:** `docker compose pull netopt-waf && docker compose up -d netopt-waf`. The compose file follows the newest 1.x release (`ghcr.io/ozark-connect/netopt-waf:1`); set `WAF_IMAGE_TAG` in `.env` to pin one. Routers on the WAF answer 500 for the few seconds it restarts.
+- **macOS:** `bash macos/update-waf.sh`.
+- **Windows:** `netopt-waf.exe` ships in the Network Optimizer MSI and updates with it.
+
+A new CRS release can flag requests the old one let through. Before updating a WAF that is in Block, switch it to Detection Only, update, and watch its events for a day before switching back. Exclusions, the mode, and the allow lists are kept across updates.
+
+Updates are not automatic on purpose: a rule change should land when you can watch for what it blocks.
+
 ### Notes
 
 - **It fails closed.** While `netopt-waf` is down, every router that lists the `waf` middleware answers 500. Add it to the routes you want protected, not to everything.
@@ -271,7 +283,7 @@ Plugins that read `.data` files are not supported: only the `.conf` files are lo
 - **The management API is plain HTTP.** Keep `WAF_LISTEN` on `127.0.0.1` so the token never crosses a network. Network Optimizer reaches a remote site's WAF through that site's On-Site Agent, which connects to it locally. If Network Optimizer runs on another host with no agent beside the WAF, uncomment the `waf-api` router and service in `config.example.yml` and use `https://waf.yourdomain.com` as the WAF URL: Traefik terminates TLS, routes only `/api/`, and takes only LAN sources.
 - Response bodies are never inspected: `forwardAuth` sees only the request.
 - **Windows (MSI):** the Traefik feature ships `netopt-waf.exe`. Set the registry value `TRAEFIK_WAF_MODE` (string, `detect` or `block`; the starting mode) under `HKLM\SOFTWARE\Ozark Connect\Network Optimizer` and restart the Network Optimizer service. After that, switch modes from Network Optimizer; `off` still turns the WAF off. The service starts the WAF, puts it on the app's router, and connects Threat Intelligence to it. Exclusions go in `Traefik\waf-rules\` in the install folder.
-- **macOS (native):** build the binary (`cd waf && go build -o /usr/local/bin/netopt-waf .`), copy `macos/netopt-waf-wrapper.sh` and a `waf.env` to `/usr/local/etc/netopt-waf/`, install `macos/net.ozarkconnect.netopt-waf.plist` in `/Library/LaunchDaemons/` (a daemon, like Traefik's, so it runs from boot) and load it with `sudo launchctl bootstrap system`, and uncomment `- waf` on the optimizer router.
+- **macOS (native):** install the binary with `bash macos/update-waf.sh` (it downloads the release for your Mac and checks its SHA-256; or build it with `cd waf && go build -o /usr/local/bin/netopt-waf .`), copy `macos/netopt-waf-wrapper.sh` and a `waf.env` to `/usr/local/etc/netopt-waf/`, install `macos/net.ozarkconnect.netopt-waf.plist` in `/Library/LaunchDaemons/` (a daemon, like Traefik's, so it runs from boot) and load it with `sudo launchctl bootstrap system`, and uncomment `- waf` on the optimizer router.
 
 ## Adding More Services
 

@@ -1,10 +1,12 @@
-FROM golang:1.25-alpine AS build
+# Builds on the runner's platform and cross-compiles, so a multi-arch image needs no emulation.
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
+ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY *.go ./
+COPY *.go VERSION ./
 COPY apps ./apps
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /netopt-waf .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /netopt-waf .
 # A named volume takes this directory's owner on first use, so nonroot can write its state.
 RUN mkdir -p /state
 

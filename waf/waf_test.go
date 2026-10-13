@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -261,6 +262,15 @@ func TestHandler_CheckAndEventsApi(t *testing.T) {
 	}
 	if page.Stats.Inspected != 2 || page.Stats.Blocked != 1 || len(page.Events) != 1 || page.Next != 2 {
 		t.Fatalf("unexpected page: %+v", page)
+	}
+	if page.Version == "" || page.Version != Version {
+		t.Fatalf("version %q, want VERSION %q", page.Version, Version)
+	}
+}
+
+func TestVersion_IsSemver(t *testing.T) {
+	if !regexp.MustCompile(`^\d+\.\d+\.\d+$`).MatchString(Version) {
+		t.Fatalf("VERSION %q is not X.Y.Z", Version)
 	}
 }
 
