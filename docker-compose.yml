@@ -56,5 +56,41 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Web Application Firewall (opt-in). Set COMPOSE_PROFILES=waf in .env to run it, then
+  # add the "waf" middleware to a router in dynamic/config.yml. See the README.
+  # Pulls the release image; WAF_IMAGE_TAG pins one (1.2.3), and the default follows major 1.
+  # Without a published image, "docker compose up" builds it from ./waf instead.
+  netopt-waf:
+    image: ghcr.io/ozark-connect/netopt-waf:${WAF_IMAGE_TAG:-1}
+    build: ./waf
+    container_name: netopt-waf
+    restart: unless-stopped
+    network_mode: host
+    profiles: ["waf"]
+    environment:
+      WAF_LISTEN: ${WAF_LISTEN:-127.0.0.1:8044}
+      WAF_MODE: ${WAF_MODE:-detect}
+      WAF_PARANOIA: ${WAF_PARANOIA:-1}
+      WAF_ALLOWED_METHODS: ${WAF_ALLOWED_METHODS:-}
+      WAF_API_TOKEN: ${WAF_API_TOKEN:-}
+      # Same list as Traefik's, so the WAF skips those hops to find the client.
+      WAF_TRUSTED_PROXIES: ${FORWARDED_TRUSTED_IPS:-}
+      # Allow lists Network Optimizer pushes are kept here, so a restart never reopens a route.
+      WAF_STATE_DIR: /var/lib/netopt-waf
+    volumes:
+      - ./waf-rules:/etc/netopt-waf:ro
+      - waf-state:/var/lib/netopt-waf
+    healthcheck:
+      test: ["CMD", "/netopt-waf", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   traefik-logs:
+  waf-state:

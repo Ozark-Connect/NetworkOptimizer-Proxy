@@ -1,0 +1,10 @@
+# netopt-waf exclusions that run AFTER the OWASP Core Rule Set.
+#
+# Copy to after-crs.conf (setup.sh does this) and restart netopt-waf.
+# Use configure-time exclusions here: they remove or narrow a rule everywhere.
+#
+# Remove one rule for every request:
+# SecRuleRemoveById 920350
+#
+# Stop one rule from inspecting a single argument:
+# SecRuleUpdateTargetById 942100 "!ARGS:query"

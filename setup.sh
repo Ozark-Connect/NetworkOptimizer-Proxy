@@ -19,6 +19,22 @@ else
     echo ".env already exists, skipping"
 fi
 
+# Generate the WAF API token Network Optimizer uses, unless .env already has one.
+# Written to .env only, never printed; an existing token is never replaced.
+if ! grep -qE '^WAF_API_TOKEN=.+' "$PROJECT_DIR/.env"; then
+    token="$(openssl rand -hex 32 2>/dev/null || od -An -tx1 -N32 /dev/urandom | tr -d ' \n')"
+    tmp="$(mktemp)"
+    awk -v t="$token" '
+        /^#? *WAF_API_TOKEN=/ && !done { print "WAF_API_TOKEN=" t; done = 1; next }
+        { print }
+        END { if (!done) print "WAF_API_TOKEN=" t }
+    ' "$PROJECT_DIR/.env" > "$tmp"
+    cat "$tmp" > "$PROJECT_DIR/.env"
+    rm -f "$tmp"
+    echo "Generated WAF_API_TOKEN in .env. Read it for Network Optimizer with:"
+    echo "  grep WAF_API_TOKEN $PROJECT_DIR/.env"
+fi
+
 # Create dynamic config from example if it doesn't exist
 if [ ! -f "$PROJECT_DIR/dynamic/config.yml" ]; then
     cp "$PROJECT_DIR/config.example.yml" "$PROJECT_DIR/dynamic/config.yml"
@@ -35,6 +51,15 @@ if [ ! -f "$PROJECT_DIR/dynamic/secrets.yml" ]; then
 else
     echo "dynamic/secrets.yml already exists, skipping"
 fi
+
+# Create WAF exclusion files from examples if they don't exist
+mkdir -p "$PROJECT_DIR/waf-rules/plugins"
+for f in before-crs.conf after-crs.conf; do
+    if [ ! -f "$PROJECT_DIR/waf-rules/$f" ]; then
+        cp "$PROJECT_DIR/waf-rules/$f.example" "$PROJECT_DIR/waf-rules/$f"
+        echo "Created waf-rules/$f from template (WAF exclusions, optional)"
+    fi
+done
 
 # Create acme directory and acme.json with correct permissions
 mkdir -p "$PROJECT_DIR/acme"

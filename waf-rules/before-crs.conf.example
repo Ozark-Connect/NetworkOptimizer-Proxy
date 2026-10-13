@@ -1,0 +1,12 @@
+# netopt-waf exclusions that run BEFORE the OWASP Core Rule Set.
+#
+# Copy to before-crs.conf (setup.sh does this) and restart netopt-waf.
+# Use runtime exclusions here: rules that switch other rules off for some requests
+# (ctl:ruleRemoveById / ctl:ruleRemoveTargetById). Rule IDs 1000-99999 are yours.
+#
+# Example: an app's /api/upload takes free-form JSON that trips SQL injection rules.
+#
+# SecRule REQUEST_HEADERS:Host "@streq app.example.com" \
+#     "id:1001,phase:1,pass,nolog,chain"
+#     SecRule REQUEST_URI "@beginsWith /api/upload" \
+#         "ctl:ruleRemoveByTag=attack-sqli"

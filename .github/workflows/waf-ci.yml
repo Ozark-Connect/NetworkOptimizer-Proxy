@@ -1,0 +1,40 @@
+name: WAF CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["waf/**", ".github/workflows/waf-ci.yml"]
+  pull_request:
+    paths: ["waf/**", ".github/workflows/waf-ci.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: waf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: waf/go.mod
+          cache-dependency-path: waf/go.sum
+      - run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      # The app exclusion tests replay real requests against the compiled-in CRS, so a CRS bump
+      # that starts flagging Grafana or Jellyfin traffic fails here.
+      - run: go test ./...
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: waf
+          platforms: linux/amd64,linux/arm64
+          push: false

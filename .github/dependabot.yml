@@ -1,0 +1,19 @@
+# CRS and Coraza ship inside netopt-waf, so a new release reaches users only through a bump here.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /waf
+    schedule:
+      interval: weekly
+    groups:
+      coraza:
+        patterns:
+          - "github.com/corazawaf/*"
+  - package-ecosystem: docker
+    directory: /waf
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
