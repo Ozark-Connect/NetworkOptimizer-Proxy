@@ -12,10 +12,10 @@ import (
 var grafanaBodies = map[string]string{
 	// The Flux query builder's default shape: "timeRangeStop)" then r["..."] trips 941370 (XSS).
 	"flux builder": `{"queries":[{"refId":"A","query":"from(bucket: \"b\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r[\"_measurement\"] == \"cpu\")"}]}`,
-	"flux vars": `{"queries":[{"refId":"A","query":"from(bucket: \"${bucket}\") |> range(start: ${__from:date:iso}, stop: ${__to:date:iso}) |> filter(fn: (r) => r.host =~ /^${host:regex}$/)"}]}`,
-	"influxql":  `{"queries":[{"refId":"A","query":"SELECT mean(\"usage_idle\") FROM \"cpu\" WHERE (\"host\" = 'nas') AND $timeFilter GROUP BY time($__interval) fill(null)","rawQuery":true}]}`,
-	"mysql":     `{"queries":[{"refId":"A","rawSql":"SELECT $__timeGroupAlias(created_at, '5m'), count(*) AS value FROM orders WHERE $__timeFilter(created_at) AND status = 'paid' GROUP BY 1 ORDER BY 1"}]}`,
-	"logql":     `{"queries":[{"refId":"A","expr":"sum by (level) (count_over_time({job=\"varlogs\"} |= \"error\" | json | line_format \"{{.msg}}\" [5m]))"}]}`,
+	"flux vars":    `{"queries":[{"refId":"A","query":"from(bucket: \"${bucket}\") |> range(start: ${__from:date:iso}, stop: ${__to:date:iso}) |> filter(fn: (r) => r.host =~ /^${host:regex}$/)"}]}`,
+	"influxql":     `{"queries":[{"refId":"A","query":"SELECT mean(\"usage_idle\") FROM \"cpu\" WHERE (\"host\" = 'nas') AND $timeFilter GROUP BY time($__interval) fill(null)","rawQuery":true}]}`,
+	"mysql":        `{"queries":[{"refId":"A","rawSql":"SELECT $__timeGroupAlias(created_at, '5m'), count(*) AS value FROM orders WHERE $__timeFilter(created_at) AND status = 'paid' GROUP BY 1 ORDER BY 1"}]}`,
+	"logql":        `{"queries":[{"refId":"A","expr":"sum by (level) (count_over_time({job=\"varlogs\"} |= \"error\" | json | line_format \"{{.msg}}\" [5m]))"}]}`,
 }
 
 func jsonPost(uri, body string) *http.Request {
@@ -65,6 +65,55 @@ func TestGrafanaApp_OnlyWhereTheRouterOptsIn(t *testing.T) {
 	unknown.URL.RawQuery = "app=nope"
 	if v := e.Inspect(unknown); v.Event == nil {
 		t.Error("an unknown app must change nothing")
+	}
+}
+
+// jellyfinRoute is a request through a router whose forwardAuth address is /check?app=jellyfin.
+func jellyfinRoute(r *http.Request) *http.Request {
+	r.URL.RawQuery = "app=jellyfin"
+	return r
+}
+
+// The web client's PlaybackInfo call with its bitrate capped at INT_MAX, as the live WAF saw it.
+const (
+	jellyfinPlaybackUri  = "/Items/49b25f9695fe5d89cf0ffe20e2607004/PlaybackInfo?UserId=1b2c3d&StartTimeTicks=0&IsPlayback=true&AutoOpenLiveStream=true&MaxStreamingBitrate=2147483647"
+	jellyfinPlaybackBody = `{"DeviceProfile":{"MaxStreamingBitrate":2147483647,"MaxStaticBitrate":100000000,"MusicStreamingTranscodingBitrate":384000,"DirectPlayProfiles":[{"Container":"mkv,mp4","Type":"Video"}]}}`
+)
+
+func TestJellyfinApp_PassesTheWebClientOnItsRouter(t *testing.T) {
+	e := engineFor(t, ModeDetect)
+	for name, req := range map[string]func() *http.Request{
+		"PlaybackInfo": func() *http.Request { return jsonPost(jellyfinPlaybackUri, jellyfinPlaybackBody) },
+		"universal audio": func() *http.Request {
+			return forwardAuth("GET", "/Audio/49b25f96/universal?UserId=1b2c3d&MaxStreamingBitrate=2147483647&Container=opus", "")
+		},
+		"web config":          func() *http.Request { return forwardAuth("GET", "/web/config.json", "") },
+		"web config, baseurl": func() *http.Request { return forwardAuth("GET", "/jellyfin/web/config.json", "") },
+	} {
+		if v := e.Inspect(req()); v.Event == nil {
+			t.Errorf("%s not flagged without app=jellyfin: the test no longer covers the set", name)
+		}
+		if v := e.Inspect(jellyfinRoute(req())); v.Event != nil {
+			t.Errorf("%s flagged on the Jellyfin router: %+v", name, v.Event.Rules)
+		}
+	}
+}
+
+func TestJellyfinApp_KeepsEverythingElse(t *testing.T) {
+	e := engineFor(t, ModeDetect)
+	for name, r := range map[string]*http.Request{
+		"config.json elsewhere": forwardAuth("GET", "/api/config.json", ""),
+		"config.json deeper":    forwardAuth("GET", "/web/a/config.json", ""),
+		"sqli in PlaybackInfo":  jsonPost("/Items/49b25f96/PlaybackInfo?UserId=1%27%20UNION%20SELECT%20password%20FROM%20users--", jellyfinPlaybackBody),
+	} {
+		if v := e.Inspect(jellyfinRoute(r)); v.Event == nil {
+			t.Errorf("%s not flagged on the Jellyfin router", name)
+		}
+	}
+	forged := jsonPost(jellyfinPlaybackUri, jellyfinPlaybackBody)
+	forged.Header.Set("X-Netopt-App", "jellyfin")
+	if v := e.Inspect(forged); v.Event == nil {
+		t.Error("a client-sent X-Netopt-App must not opt a request in")
 	}
 }
 
