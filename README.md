@@ -219,7 +219,13 @@ Good candidates are apps with forms, logins, and APIs: a CMS, a wiki, a dashboar
 - Speed tests and the Network Optimizer `agents` router: Traefik buffers the request body before asking the WAF, which breaks throughput tests and long-lived streams.
 - Routes whose clients send large files (photo and file sync, backups, media uploads), unless you give them the upload middleware below.
 
-**Large uploads.** Traefik answers **401** to a request whose body is over the middleware's `maxBodySize` (10 MB for `waf`), before the WAF sees it. `config.example.yml` has a commented-out `waf-uploads` middleware with a larger cap for upload-heavy apps. Traefik holds each body in memory while it waits for the WAF, so size the cap for your host. The WAF inspects the first `WAF_BODY_LIMIT` bytes (10 MB) of anything larger.
+**Large uploads.** Traefik holds a request body in memory while the WAF decides, so each WAF middleware caps the body it takes: `maxBodySize`, 10 MB for `waf`. A request over the cap gets **401** from Traefik before the WAF sees it, so it never shows up as an event in Network Optimizer. Photo and file sync, backups, media uploads, and large PDF imports hit this. The way forward:
+
+- **Docker:** `config.example.yml` has a commented-out `waf-uploads` middleware with a 100 MB cap. Copy it into `dynamic/config.yml`, size the cap for your host, and list `- waf-uploads` in place of `- waf` on that router. Or raise `maxBodySize` on `waf` itself to lift it for every router.
+- **macOS:** raise `maxBodySize` in `/usr/local/etc/traefik/dynamic/config.yml`, or add the `waf-uploads` middleware there (the template carries it commented out).
+- **Windows (MSI):** the service regenerates `Traefik\dynamic\config.yml` from `Traefik\templates\config.yml.template` at every start, so edit the cap in the template, and expect an MSI upgrade to replace the template.
+
+The WAF inspects the first `WAF_BODY_LIMIT` bytes (10 MB) of a body whatever the cap, so a higher cap costs memory and buys no more inspection. Set it as low as your uploads allow.
 
 ### Only Your Sites (Trusted Sources)
 
@@ -377,6 +383,8 @@ docker run --rm -v ./acme:/acme ldez/traefik-certs-dumper file \
 **Port conflict**: If another service (e.g., Caddy) is already using port 443, set `LISTEN_IP` in `.env` to bind Traefik to a specific IP address.
 
 **500 on every request to a route**: The route lists the `waf` middleware and `netopt-waf` is not running. Check with `docker compose ps netopt-waf` and `docker compose logs netopt-waf`.
+
+**401 on an upload to a route behind the WAF**: the body is over that middleware's `maxBodySize` (10 MB for `waf`) and Traefik refused it before the WAF saw it, so there is no event. See [Large uploads](#putting-your-own-apps-behind-it).
 
 **WAF blocking a legitimate request**: Find its rule IDs in Network Optimizer's Threat Intelligence or in `docker compose logs netopt-waf`, and add an exclusion in `waf-rules/` (see Web Application Firewall above).
 
