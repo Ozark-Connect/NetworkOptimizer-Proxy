@@ -234,3 +234,54 @@ func TestHandler_ExclusionsPersistAndRefuseBadSets(t *testing.T) {
 		t.Fatalf("not persisted: %+v", l)
 	}
 }
+
+// arrRoute is a request through a router whose forwardAuth address is /check?app=arr.
+func arrRoute(r *http.Request) *http.Request {
+	r.URL.RawQuery = "app=arr"
+	return r
+}
+
+// The SignalR client's negotiate and message posts, as the live WAF saw them from Sonarr.
+func signalrPost(uri, body string) *http.Request {
+	r := forwardAuth("POST", uri, body)
+	r.Header.Set("Content-Type", "text/plain;charset=UTF-8")
+	return r
+}
+
+func TestArrApp_SignalRPassesOnItsRouter(t *testing.T) {
+	e := engineFor(t, ModeDetect)
+	for name, req := range map[string]func() *http.Request{
+		"negotiate": func() *http.Request {
+			return signalrPost("/signalr/messages/negotiate?access_token=769fe360&negotiateVersion=1", "")
+		},
+		"messages": func() *http.Request {
+			return signalrPost("/signalr/messages?access_token=769fe360&id=18aqntPj", `{"protocol":"json","version":1}`+"\x1e")
+		},
+		"negotiate, baseurl": func() *http.Request { return signalrPost("/sonarr/signalr/messages/negotiate?negotiateVersion=1", "") },
+	} {
+		if v := e.Inspect(req()); v.Event == nil || !hasRule(v.Event, 920420) {
+			t.Errorf("%s not flagged by 920420 without app=arr: the test no longer covers the set", name)
+		}
+		if v := e.Inspect(arrRoute(req())); v.Event != nil {
+			t.Errorf("%s flagged on the arr router: %+v", name, v.Event.Rules)
+		}
+	}
+	// text/plain anywhere else on the same router is still refused.
+	if v := e.Inspect(arrRoute(signalrPost("/api/v3/series", `{"title":"x"}`))); v.Event == nil || !hasRule(v.Event, 920420) {
+		t.Error("text/plain on the API passed: the set reached past the SignalR paths")
+	}
+	// The API is still inspected in full.
+	sqli := jsonPost("/api/v3/series/lookup?term=x%27%20UNION%20SELECT%20password%20FROM%20users--", "")
+	if v := e.Inspect(arrRoute(sqli)); v.Event == nil || !hasTag(v.Event, "attack-sqli") {
+		t.Error("SQL injection on the arr router not flagged")
+	}
+}
+
+func hasRule(e *Event, id int) bool {
+	for _, r := range e.Rules {
+		if r.ID == id {
+			return true
+		}
+	}
+	return false
+}

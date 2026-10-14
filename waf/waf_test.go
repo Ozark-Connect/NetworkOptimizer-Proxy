@@ -96,6 +96,40 @@ func TestCleanPost_NoEvent(t *testing.T) {
 	}
 }
 
+func TestEmptyPost_NoEvent(t *testing.T) {
+	// An empty body still has a known length of zero. Dropping the header read as a POST with
+	// neither Content-Length nor Transfer-Encoding (CRS 920180) on every SignalR negotiate.
+	r := forwardAuth("POST", "/signalr/messages/negotiate?negotiateVersion=1", "")
+	r.Header.Set("Content-Type", "application/json")
+	if v := engineFor(t, ModeBlock).Inspect(r); v.Blocked || v.Event != nil {
+		t.Fatalf("empty POST flagged: blocked=%v event=%+v", v.Blocked, v.Event)
+	}
+}
+
+func TestEvent_CarriesWhatEachRuleMatched(t *testing.T) {
+	v := engineFor(t, ModeDetect).Inspect(forwardAuth("POST", "/login", "user=admin&pass=1%27%20UNION%20SELECT%20password%20FROM%20users--"))
+	if v.Event == nil {
+		t.Fatal("expected an event")
+	}
+	var seen bool
+	for _, rule := range v.Event.Rules {
+		for _, m := range rule.Matched {
+			if m.Variable == "ARGS" && m.Key == "pass" && strings.Contains(m.Value, "UNION SELECT") {
+				seen = true
+			}
+			if len(m.Value) > maxMatchedValue {
+				t.Errorf("rule %d matched value not truncated: %d chars", rule.ID, len(m.Value))
+			}
+		}
+		if len(rule.Matched) > maxMatchedPerRule {
+			t.Errorf("rule %d carries %d matches, cap is %d", rule.ID, len(rule.Matched), maxMatchedPerRule)
+		}
+	}
+	if !seen {
+		t.Errorf("no rule reported ARGS:pass with the injected text; rules=%+v", v.Event.Rules)
+	}
+}
+
 func TestBodyIsInspected(t *testing.T) {
 	v := engineFor(t, ModeDetect).Inspect(forwardAuth("POST", "/login", "user=admin&pass=1%27%20UNION%20SELECT%20password%20FROM%20users--"))
 	if v.Event == nil || !hasTag(v.Event, "attack-sqli") {

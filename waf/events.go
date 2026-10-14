@@ -13,12 +13,21 @@ const (
 	ActionDetected = "detected"
 )
 
+// MatchedData is what a rule matched: the variable it read (ARGS, REQUEST_BODY, ...), the key
+// inside it when there is one (the parameter or header name), and the value, truncated.
+type MatchedData struct {
+	Variable string `json:"variable"`
+	Key      string `json:"key,omitempty"`
+	Value    string `json:"value,omitempty"`
+}
+
 // RuleHit is one CRS rule that contributed to an event.
 type RuleHit struct {
-	ID       int      `json:"id"`
-	Message  string   `json:"msg"`
-	Severity string   `json:"severity"`
-	Tags     []string `json:"tags"`
+	ID       int           `json:"id"`
+	Message  string        `json:"msg"`
+	Severity string        `json:"severity"`
+	Tags     []string      `json:"tags"`
+	Matched  []MatchedData `json:"matched,omitempty"`
 }
 
 // Event is a request that crossed the CRS anomaly threshold.
