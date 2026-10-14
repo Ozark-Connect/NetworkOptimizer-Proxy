@@ -250,8 +250,9 @@ func (e *Engine) Inspect(r *http.Request) Verdict {
 	if app := r.URL.Query().Get("app"); app != "" && slices.Contains(e.apps, app) {
 		tx.AddRequestHeader(appHeader, app)
 	}
-	// net/http moves these out of r.Header; without them CRS 920180 flags every POST.
-	if r.ContentLength > 0 {
+	// net/http moves these out of r.Header; without them CRS 920180 flags every POST. forwardAuth
+	// delivers the whole body, so its length is known even when it is zero (SignalR's negotiate).
+	if r.ContentLength >= 0 && len(r.TransferEncoding) == 0 {
 		tx.AddRequestHeader("Content-Length", strconv.FormatInt(r.ContentLength, 10))
 	}
 	for _, te := range r.TransferEncoding {
@@ -304,6 +305,7 @@ func buildEvent(matched []types.MatchedRule, blocked bool) *Event {
 			Message:  m.Message(),
 			Severity: strings.ToUpper(meta.Severity().String()),
 			Tags:     meta.Tags(),
+			Matched:  matchedData(m.MatchedDatas()),
 		})
 	}
 	if !crossed || len(rules) == 0 {
@@ -322,6 +324,29 @@ func buildEvent(matched []types.MatchedRule, blocked bool) *Event {
 		action = ActionBlocked
 	}
 	return &Event{Action: action, AnomalyScore: score, Rules: rules}
+}
+
+// Bounds on what an event carries of the request: enough to see why a rule fired, not the request.
+const (
+	maxMatchedPerRule = 3
+	maxMatchedValue   = 200
+)
+
+// matchedData is the variable, key, and value each match read, so an exclusion can be written from
+// the event instead of guessed.
+func matchedData(datas []types.MatchData) []MatchedData {
+	var out []MatchedData
+	for _, d := range datas {
+		if len(out) == maxMatchedPerRule {
+			break
+		}
+		out = append(out, MatchedData{
+			Variable: d.Variable().Name(),
+			Key:      truncate(d.Key(), maxMatchedValue),
+			Value:    truncate(d.Value(), maxMatchedValue),
+		})
+	}
+	return out
 }
 
 func severityRank(s string) int {

@@ -125,6 +125,15 @@ http:
     #     maxBodySize: 10485760
     #     maxResponseBodySize: 65536
 
+    # The same WAF for a Sonarr, Radarr, Lidarr, Prowlarr, Readarr, or Whisparr router: their
+    # SignalR connection passes. Use it in place of "- waf", on those routers only.
+    # waf-arr:
+    #   forwardAuth:
+    #     address: "http://127.0.0.1:8044/check?app=arr"
+    #     forwardBody: true
+    #     maxBodySize: 10485760
+    #     maxResponseBodySize: 65536
+
     # Example: restrict to LAN only (customize these subnets for your network)
     lan-only:
       ipAllowList:
