@@ -313,6 +313,24 @@ func TestBase_BlazorLongPollingPassesOnEveryRouter(t *testing.T) {
 	}
 }
 
+func TestBase_JSONKeyNamesAreNotFilePaths(t *testing.T) {
+	e := engineFor(t, ModeBlock)
+	// Keys that 930120 read as OS files before the base set, profileId as Seerr posts it.
+	for _, key := range []string{"profileId", "history", "bashrc", "htaccessPath"} {
+		if v := e.Inspect(jsonPost("/api/v1/request", `{"mediaType":"movie","`+key+`":4}`)); v.Event != nil {
+			t.Errorf("JSON key %s flagged: %+v", key, v.Event.Rules)
+		}
+	}
+	// A query string name is not a JSON key, so it is still checked.
+	if v := e.Inspect(forwardAuth("GET", "/api/x?.bashrc=1", "")); v.Event == nil || !hasRule(v.Event, 930120) {
+		t.Error("query string name .bashrc passed: the base set reached past JSON key names")
+	}
+	// JSON values are still inspected.
+	if v := e.Inspect(jsonPost("/api/v1/request", `{"rootFolder":"../../../../etc/passwd"}`)); v.Event == nil || !hasTag(v.Event, "attack-lfi") {
+		t.Error("path traversal in a JSON value not flagged")
+	}
+}
+
 func hasRule(e *Event, id int) bool {
 	for _, r := range e.Rules {
 		if r.ID == id {
