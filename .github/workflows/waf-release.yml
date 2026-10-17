@@ -1,7 +1,7 @@
 name: WAF Release
 
-# A vX.Y.Z tag publishes ghcr.io/ozark-connect/netopt-waf (X.Y.Z, X.Y, X, latest) and attaches
-# native binaries to a draft release; publish the draft once its notes are written.
+# A vX.Y.Z tag publishes ghcr.io/ozark-connect/netopt-waf (X.Y.Z, X.Y, X, latest), attaches native
+# binaries to the release (a draft made before the tag keeps its notes), and publishes it once both pass.
 on:
   push:
     tags: ["v*.*.*"]
@@ -91,3 +91,12 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" \
               --notes "netopt-waf ${{ needs.check.outputs.version }}"
           gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+
+  # macOS update-waf.sh downloads release assets, which a draft does not serve.
+  publish:
+    needs: [image, binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
