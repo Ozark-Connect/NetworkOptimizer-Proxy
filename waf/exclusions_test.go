@@ -277,6 +277,42 @@ func TestArrApp_SignalRPassesOnItsRouter(t *testing.T) {
 	}
 }
 
+// Blazor's Long Polling transport posts the handshake as text/plain and messages as octet-stream.
+func blazorPost(uri, contentType, body string) *http.Request {
+	r := forwardAuth("POST", uri, body)
+	r.Header.Set("Content-Type", contentType)
+	return r
+}
+
+func TestBase_BlazorLongPollingPassesOnEveryRouter(t *testing.T) {
+	e := engineFor(t, ModeBlock)
+	handshake := `{"protocol":"blazorpack","version":1}` + "\x1e"
+	for name, req := range map[string]func() *http.Request{
+		"handshake": func() *http.Request {
+			return blazorPost("/_blazor?id=Pg4HE8LNRjNozKoJuIuqnQ", "text/plain;charset=UTF-8", handshake)
+		},
+		"binary message": func() *http.Request {
+			return blazorPost("/_blazor?id=Pg4HE8LNRjNozKoJuIuqnQ", "application/octet-stream", "\x95\x01\x80\xc0")
+		},
+		"handshake, base path": func() *http.Request {
+			return blazorPost("/optimizer/_blazor?id=Pg4HE8LNRjNozKoJuIuqnQ", "text/plain;charset=UTF-8", handshake)
+		},
+	} {
+		if v := e.Inspect(req()); v.Blocked || v.Event != nil {
+			t.Errorf("%s flagged on a plain router: %+v", name, v.Event)
+		}
+	}
+	// text/plain anywhere else is still refused.
+	if v := e.Inspect(blazorPost("/_blazor/other", "text/plain;charset=UTF-8", handshake)); v.Event == nil || !hasRule(v.Event, 920420) {
+		t.Error("text/plain off /_blazor passed: the base set reached past its path")
+	}
+	// The body on /_blazor is still inspected.
+	attack := blazorPost("/_blazor?id=x", "application/x-www-form-urlencoded", "q=1%27%20UNION%20SELECT%20password%20FROM%20users--")
+	if v := e.Inspect(attack); v.Event == nil || !hasTag(v.Event, "attack-sqli") {
+		t.Error("SQL injection on /_blazor not flagged")
+	}
+}
+
 func hasRule(e *Event, id int) bool {
 	for _, r := range e.Rules {
 		if r.ID == id {

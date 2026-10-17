@@ -18,6 +18,11 @@ import (
 //go:embed apps/*.conf
 var appFiles embed.FS
 
+// Built-in exclusions that apply on every router, with no opt-in.
+//
+//go:embed base.conf
+var baseRules string
+
 // AppNames lists the built-in exclusion sets, sorted.
 func AppNames() []string {
 	entries, _ := appFiles.ReadDir("apps")

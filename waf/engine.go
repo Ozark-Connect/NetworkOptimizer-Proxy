@@ -118,9 +118,10 @@ func (e *Engine) SetExclusions(list []Exclusion) error {
 // Apps lists the built-in app exclusion sets a router can opt into.
 func (e *Engine) Apps() []string { return append([]string{}, e.apps...) }
 
-// ruleText is the built-in app sets, then the managed exclusions, loaded ahead of before-crs.conf.
+// ruleText is the built-in base and app sets, then the managed exclusions, loaded ahead of
+// before-crs.conf.
 func (e *Engine) ruleText(managed []Exclusion) string {
-	return appDirectives(e.apps) + renderExclusions(managed)
+	return baseRules + "\n" + appDirectives(e.apps) + renderExclusions(managed)
 }
 
 func buildWAF(mode string, paranoia int, methods, rulesDir string, bodyLimit int, builtIn string) (coraza.WAF, error) {
