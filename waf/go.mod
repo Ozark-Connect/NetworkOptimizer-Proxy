@@ -4,11 +4,13 @@ go 1.25.0
 
 require (
 	github.com/corazawaf/coraza-coreruleset/v4 v4.25.0
-	github.com/corazawaf/coraza/v3 v3.8.1
+	// Pinned to main for #1742 (slash-aware path cleaning; on Windows, /etc/passwd went unmatched).
+	// Move to the first tagged release after v3.8.1 that carries it.
+	github.com/corazawaf/coraza/v3 v3.8.2-0.20261015012130-3fc3ae2761db
 )
 
 require (
-	github.com/corazawaf/libinjection-go v0.3.3 // indirect
+	github.com/corazawaf/libinjection-go v0.3.4 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gotnospirit/makeplural v0.0.0-20180622080156-a5f48d94d976 // indirect

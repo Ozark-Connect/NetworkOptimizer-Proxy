@@ -137,6 +137,17 @@ func TestBodyIsInspected(t *testing.T) {
 	}
 }
 
+func TestOSFilePathsMatchOnEveryPlatform(t *testing.T) {
+	// Coraza v3.8.1 cleaned paths with filepath.Clean, which turns / into \ on Windows, so
+	// 930120 missed every etc/... entry in the MSI's WAF. Fails on Windows without the fix.
+	e := engineFor(t, ModeBlock)
+	for _, q := range []string{"f=/etc/passwd", "f=/etc/shadow", "f=/proc/self/environ"} {
+		if v := e.Inspect(forwardAuth("GET", "/x?"+q, "")); v.Event == nil || !hasRule(v.Event, 930120) {
+			t.Errorf("%s not flagged by 930120", q)
+		}
+	}
+}
+
 func TestExclusionFile_RemovesRule(t *testing.T) {
 	dir := t.TempDir()
 	// 942100 is the libinjection SQLi rule; removing the whole SQLi family proves after-crs.conf loads.
