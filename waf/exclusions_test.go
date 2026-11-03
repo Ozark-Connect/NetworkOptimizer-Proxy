@@ -313,6 +313,47 @@ func TestBase_BlazorLongPollingPassesOnEveryRouter(t *testing.T) {
 	}
 }
 
+// startCircuitFrame builds a blazorpack StartCircuit invocation whose MessagePack payload is n bytes.
+// Its varint length prefix carries 0x0a or 0x0d for some lengths: 1290 encodes as 0x8a 0x0a.
+func startCircuitFrame(n int) string {
+	head := "\x95\x01\x80\xa10\xacStartCircuit\x94" +
+		"\xd9\x27https://optimizer.example.com/login/abc/" + "\xd9\x27https://optimizer.example.com/login/abc/"
+	tail := "\xa0"
+	pad := n - len(head) - len(tail) - 3 // str16 header
+	components := `[{"type":"server","sequence":0,"descriptor":"` + strings.Repeat("Q", pad-48) + `"}]`
+	components = components[:pad]
+	body := head + "\xda" + string([]byte{byte(pad >> 8), byte(pad)}) + components + tail
+	var prefix []byte
+	for v := len(body); ; v >>= 7 {
+		if v < 0x80 {
+			prefix = append(prefix, byte(v))
+			break
+		}
+		prefix = append(prefix, byte(v&0x7f|0x80))
+	}
+	return string(prefix) + body
+}
+
+// The binary body is MessagePack, not a form. Parsed as one, a 0x0a byte reads as a CR/LF injection
+// (921150) and the circuit never starts.
+func TestBase_BlazorBinaryMessagesAreNotParsedAsForms(t *testing.T) {
+	e := engineFor(t, ModeBlock)
+	for _, n := range []int{1290, 1293, 1300, 2000} {
+		frame := startCircuitFrame(n)
+		for _, uri := range []string{"/_blazor?id=Fbqibwx_4cHJFySQLmpPnA", "/optimizer/_blazor?id=Fbqibwx_4cHJFySQLmpPnA"} {
+			for _, ct := range []string{"application/octet-stream", "text/plain;charset=UTF-8"} {
+				if v := e.Inspect(blazorPost(uri, ct, frame)); v.Blocked || v.Event != nil {
+					t.Errorf("%d-byte StartCircuit to %s as %s flagged: %+v", n, uri, ct, v.Event)
+				}
+			}
+		}
+	}
+	// The same bytes off /_blazor are still parsed and refused.
+	if v := e.Inspect(blazorPost("/_blazor/other", "application/octet-stream", startCircuitFrame(1290))); v.Event == nil {
+		t.Error("octet-stream off /_blazor passed: the base set reached past its path")
+	}
+}
+
 func TestBase_JSONKeyNamesAreNotFilePaths(t *testing.T) {
 	e := engineFor(t, ModeBlock)
 	// Keys that 930120 read as OS files before the base set, profileId as Seerr posts it.
