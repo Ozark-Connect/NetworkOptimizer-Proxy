@@ -377,6 +377,31 @@ docker run --rm -v ./acme:/acme ldez/traefik-certs-dumper file \
   --domain-subdir
 ```
 
+## Access Log Rotation
+
+Traefik writes its access log to the `traefik-logs` volume (`traefik-proxy_traefik-logs` on the host) and never rotates it. Rotate it from the host with logrotate. After a rotation, send `USR1` to Traefik so it reopens the file. Send the signal to Traefik's host PID, not with `docker kill -s USR1`: Docker marks a container as manually stopped on any `docker kill`, even for a signal that does not stop it, and `restart: unless-stopped` then leaves Traefik down after the next Docker restart or upgrade.
+
+`/etc/logrotate.d/traefik-proxy`:
+
+```
+/var/lib/docker/volumes/traefik-proxy_traefik-logs/_data/*.log {
+    daily
+    rotate 7
+    maxsize 100M
+    missingok
+    notifempty
+    compress
+    sharedscripts
+    postrotate
+        PID=$(/usr/bin/docker inspect -f '{{.State.Pid}}' traefik-proxy 2>/dev/null)
+        if [ "${PID:-0}" -gt 0 ] 2>/dev/null; then kill -USR1 "$PID"; fi
+        true
+    endscript
+}
+```
+
+The path and the container name follow the compose project name `traefik-proxy` and `container_name: traefik-proxy`. Change them here if you change them in `docker-compose.yml`.
+
 ## Troubleshooting
 
 **Certificates not issuing**: Check that your Cloudflare API token is a **User API Token** (created under My Profile > API Tokens, `cfut_` prefix) with `Zone:Read` and `DNS:Edit` permissions. Account API Tokens (`cfat_` prefix) will not work. Verify the domain's DNS is managed by Cloudflare and check logs with `docker compose logs`. If you see NXDOMAIN or propagation timeout errors, your local DNS resolver may be interfering - the default config already handles this, but you can increase the delay by setting `ACME_PROPAGATION_DELAY` in `.env` if needed.
@@ -384,6 +409,8 @@ docker run --rm -v ./acme:/acme ldez/traefik-certs-dumper file \
 **Speed test still using HTTP/2**: Verify the speed test router references `options: h1only` in its TLS config. Check with: `curl -v https://speedtest.yourdomain.com 2>&1 | grep ALPN`.
 
 **Port conflict**: If another service (e.g., Caddy) is already using port 443, set `LISTEN_IP` in `.env` to bind Traefik to a specific IP address.
+
+**Traefik stays down after a Docker restart or upgrade while other containers come back**: something ran `docker kill` on it, which marks it as manually stopped. A logrotate `postrotate` with `docker kill -s USR1` is the usual cause; see [Access Log Rotation](#access-log-rotation). Start it with `docker compose up -d`.
 
 **500 on every request to a route**: The route lists the `waf` middleware and `netopt-waf` is not running. Check with `docker compose ps netopt-waf` and `docker compose logs netopt-waf`.
 
