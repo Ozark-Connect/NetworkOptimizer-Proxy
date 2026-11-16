@@ -6,6 +6,9 @@ services:
     container_name: traefik-proxy
     restart: unless-stopped
     network_mode: host
+    # Hands every .env variable to Traefik, so a non-Cloudflare DNS provider's own
+    # credentials (see DNS_PROVIDER in .env.example) reach it without editing this file.
+    env_file: .env
     environment:
       CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN}
     command:
@@ -25,11 +28,11 @@ services:
       - "--providers.file.directory=/etc/traefik/dynamic/"
       - "--providers.file.watch=true"
 
-      # --- Let's Encrypt (DNS-01 via Cloudflare) ---
+      # --- Let's Encrypt (DNS-01; Cloudflare unless DNS_PROVIDER is set) ---
       - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json"
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=${DNS_PROVIDER:-cloudflare}"
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge.resolvers=${DNS_RESOLVERS:-1.1.1.1:53,1.0.0.1:53}"
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge.propagation.delaybeforechecks=${ACME_PROPAGATION_DELAY:-20}"
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge.propagation.disablechecks=true"

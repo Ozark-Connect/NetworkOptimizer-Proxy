@@ -39,7 +39,7 @@ The `windows/` directory contains the config templates used by the MSI build:
 
 - **For Linux**: Docker and Docker Compose
 - **For Windows**: Network Optimizer MSI installer (Traefik feature)
-- A domain with DNS managed by Cloudflare (for automatic Let's Encrypt certificates)
+- A domain with DNS at Cloudflare or [another supported provider](#automatic-https) (for automatic Let's Encrypt certificates)
 - DNS A records pointing to the host running Traefik:
   - e.g. `optimizer.yourdomain.com` - Network Optimizer web UI
   - e.g. `speedtest.yourdomain.com` - OpenSpeedTest (HTTP/1.1)
@@ -131,10 +131,12 @@ In addition to HTTP/1.1, the speed test route strips the `Accept-Encoding` heade
 
 ### Automatic HTTPS
 
-Traefik uses Let's Encrypt with Cloudflare DNS-01 challenges, so:
+Traefik uses Let's Encrypt DNS-01 challenges, through Cloudflare by default, so:
 - No port 80 exposure required for certificate validation
 - Wildcard certificates are supported
 - Certificates auto-renew before expiry
+
+**DNS on another provider (Docker):** set `DNS_PROVIDER` in `.env` and add that provider's variables. `.env.example` shows Porkbun and GoDaddy; every code and its variables are in the [lego DNS provider list](https://go-acme.github.io/lego/dns/).
 
 By default, DNS propagation checking is disabled (`propagation.disablechecks=true`) and replaced with a fixed 20-second delay. This avoids certificate failures caused by local DNS resolvers (Pi-hole, NextDNS, AdGuard Home, etc.) that may not see the Cloudflare TXT records during validation. Cloudflare's API is usually fast enough that 20 seconds is plenty. If Let's Encrypt itself intermittently reports `Incorrect TXT record` or `No TXT record found` (the previous challenge value is still what Cloudflare's authoritative servers answer with), set `ACME_PROPAGATION_DELAY` in `.env` to a larger value such as `120`.
 
@@ -363,7 +365,7 @@ Internet
 
 - **Single Traefik instance** handles all hostnames
 - **Host networking** (`network_mode: host`) for direct access to local services
-- **DNS-01 challenges** via Cloudflare (no HTTP-01, no port 80 exposure needed)
+- **DNS-01 challenges** (Cloudflare by default; no HTTP-01, no port 80 exposure needed)
 - **File provider** watches `dynamic/` for config changes (hot reload, no restart needed)
 
 ## Extracting Certificates
@@ -404,7 +406,7 @@ The path and the container name follow the compose project name `traefik-proxy` 
 
 ## Troubleshooting
 
-**Certificates not issuing**: Check that your Cloudflare API token is a **User API Token** (created under My Profile > API Tokens, `cfut_` prefix) with `Zone:Read` and `DNS:Edit` permissions. Account API Tokens (`cfat_` prefix) will not work. Verify the domain's DNS is managed by Cloudflare and check logs with `docker compose logs`. If you see NXDOMAIN or propagation timeout errors, your local DNS resolver may be interfering - the default config already handles this, but you can increase the delay by setting `ACME_PROPAGATION_DELAY` in `.env` if needed.
+**Certificates not issuing**: On Cloudflare: check that your API token is a **User API Token** (created under My Profile > API Tokens, `cfut_` prefix) with `Zone:Read` and `DNS:Edit` permissions. Account API Tokens (`cfat_` prefix) will not work. On another provider, check its variables against the [lego list](https://go-acme.github.io/lego/dns/) and `DNS_PROVIDER` against its code. Verify the domain's DNS is managed by that provider and check logs with `docker compose logs`. If you see NXDOMAIN or propagation timeout errors, your local DNS resolver may be interfering - the default config already handles this, but you can increase the delay by setting `ACME_PROPAGATION_DELAY` in `.env` if needed.
 
 **Speed test still using HTTP/2**: Verify the speed test router references `options: h1only` in its TLS config. Check with: `curl -v https://speedtest.yourdomain.com 2>&1 | grep ALPN`.
 
