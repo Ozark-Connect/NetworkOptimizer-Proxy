@@ -39,8 +39,8 @@ The `windows/` directory contains the config templates used by the MSI build:
 
 - **For Linux**: Docker and Docker Compose
 - **For Windows**: Network Optimizer MSI installer (Traefik feature)
-- A domain with DNS at Cloudflare or [another supported provider](#automatic-https) (for automatic Let's Encrypt certificates)
-- DNS A records pointing to the host running Traefik:
+- A domain with DNS at Cloudflare or [another supported provider](#automatic-https) (for automatic Let's Encrypt certificates; [internal-only hostnames work](#automatic-https))
+- Local DNS records (your gateway, Pi-hole) pointing to the host running Traefik:
   - e.g. `optimizer.yourdomain.com` - Network Optimizer web UI
   - e.g. `speedtest.yourdomain.com` - OpenSpeedTest (HTTP/1.1)
   - e.g. `speedtest-wan.yourdomain.com` - (optional) External WAN speed test server
