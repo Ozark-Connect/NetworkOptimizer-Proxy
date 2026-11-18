@@ -99,6 +99,8 @@ Optional file for middleware that injects credentials (e.g., Basic Auth headers 
 cp secrets.example.yml dynamic/secrets.yml
 ```
 
+Uncomment the whole block, `http:` included, before you start Traefik. An empty `http:` block stops Traefik from loading any route in `dynamic/`.
+
 This file is gitignored and managed directly on the host.
 
 ## How It Works

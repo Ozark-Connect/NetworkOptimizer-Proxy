@@ -44,13 +44,8 @@ else
     echo "dynamic/config.yml already exists, skipping"
 fi
 
-# Create secrets config from example if it doesn't exist
-if [ ! -f "$PROJECT_DIR/dynamic/secrets.yml" ]; then
-    cp "$PROJECT_DIR/secrets.example.yml" "$PROJECT_DIR/dynamic/secrets.yml"
-    echo "Created dynamic/secrets.yml from template (optional)"
-else
-    echo "dynamic/secrets.yml already exists, skipping"
-fi
+# secrets.yml is optional and not created here: an unedited copy leaves an empty
+# http block, which Traefik rejects, and that drops every file-provider route.
 
 # Create WAF exclusion files from examples if they don't exist
 mkdir -p "$PROJECT_DIR/waf-rules/plugins"
