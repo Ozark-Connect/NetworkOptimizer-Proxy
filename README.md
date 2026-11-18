@@ -20,7 +20,7 @@ cd NetworkOptimizer-Proxy
 bash setup.sh
 
 # Edit your configuration
-nano .env                    # Cloudflare token, email, listen IP
+nano .env                    # DNS provider token, email, listen IP
 nano dynamic/config.yml      # Update hostnames
 
 # Start
@@ -139,6 +139,14 @@ Traefik uses Let's Encrypt DNS-01 challenges, through Cloudflare by default, so:
 **DNS on another provider (Docker):** set `DNS_PROVIDER` in `.env` and add that provider's variables. `.env.example` shows Porkbun and GoDaddy; every code and its variables are in the [lego DNS provider list](https://go-acme.github.io/lego/dns/).
 
 By default, DNS propagation checking is disabled (`propagation.disablechecks=true`) and replaced with a fixed 20-second delay. This avoids certificate failures caused by local DNS resolvers (Pi-hole, NextDNS, AdGuard Home, etc.) that may not see the Cloudflare TXT records during validation. Cloudflare's API is usually fast enough that 20 seconds is plenty. If Let's Encrypt itself intermittently reports `Incorrect TXT record` or `No TXT record found` (the previous challenge value is still what Cloudflare's authoritative servers answer with), set `ACME_PROPAGATION_DELAY` in `.env` to a larger value such as `120`.
+
+**Internal-only hostnames still work.** A valid Let's Encrypt certificate needs proof that you own the domain, by one of two methods: DNS-01 or HTTP-01. DNS-01 needs temporary DNS entries created on your domain of choice. HTTP-01 needs Let's Encrypt to reach your actual HTTP server at the hostname you want the certificate for. This setup uses DNS-01, so nothing has to be reachable from the internet.
+
+- Your internal DNS A / CNAME records do not have to live on Cloudflare (or your other DNS provider). Only the temporary TXT records that prove domain ownership do.
+- Traefik does not create the A / CNAME records for your proxy hosts. It only creates and removes those temporary entries for certificate validation.
+- Keep resolving your hostnames wherever you do today. For example, I run my private DNS entries in UniFi Network and sync them to my Pi-hole.
+
+Overall, this is the easiest way to get valid TLS certificates for free, automatically renewed, and it removes a lot of headache. I've used Let's Encrypt with certbot professionally for almost a decade.
 
 ## WAN Speed Test Server (Optional)
 
