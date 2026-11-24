@@ -303,6 +303,7 @@ Updates are not automatic on purpose: a rule change should land when you can wat
 - **Ban list.** With Automatic Blocking on, Network Optimizer sends the addresses it has blocked to `PUT /api/bans` every minute, and the WAF answers 403 to them on every router that uses it, in either mode. The list lives in memory and each entry carries its own expiry, so a restart clears it until the next sync and bans lapse if Network Optimizer stops syncing. This is what blocks a client behind Cloudflare, where a gateway block cannot see the client's address. In Enforce, it also carries the public block lists chosen in Automatic Blocking.
 - **The management API is plain HTTP.** Keep `WAF_LISTEN` on `127.0.0.1` so the token never crosses a network. Network Optimizer reaches a remote site's WAF through that site's On-Site Agent, which connects to it locally. If Network Optimizer runs on another host with no agent beside the WAF, uncomment the `waf-api` router and service in `config.example.yml` and use `https://waf.yourdomain.com` as the WAF URL: Traefik terminates TLS, routes only `/api/`, and takes only LAN sources.
 - Response bodies are never inspected: `forwardAuth` sees only the request.
+- **Every WAF middleware sets `trustForwardHeader: false`**, so the WAF never sees an `X-Forwarded-*` header a client sent (Traefik 3.8 warns at startup when it is unset). Installs that predate it: add the line to each `forwardAuth` in `dynamic/config.yml`; Traefik reloads it with no restart. Never set it to `true`: a client behind a trusted proxy could then choose the `X-Forwarded-Host` the WAF matches exclusions against.
 - **Windows (MSI):** the Traefik feature ships `netopt-waf.exe`. Set the registry value `TRAEFIK_WAF_MODE` (string, `detect` or `block`; the starting mode) under `HKLM\SOFTWARE\Ozark Connect\Network Optimizer` and restart the Network Optimizer service. After that, switch modes from Network Optimizer; `off` still turns the WAF off. The service starts the WAF, puts it on the app's router, and connects Threat Intelligence to it. Exclusions go in `Traefik\waf-rules\` in the install folder.
 - **macOS (native):** install the binary with `bash macos/update-waf.sh` (it downloads the release for your Mac and checks its SHA-256; or build it with `cd waf && go build -o /usr/local/bin/netopt-waf .`), copy `macos/netopt-waf-wrapper.sh` and a `waf.env` to `/usr/local/etc/netopt-waf/`, install `macos/net.ozarkconnect.netopt-waf.plist` in `/Library/LaunchDaemons/` (a daemon, like Traefik's, so it runs from boot) and load it with `sudo launchctl bootstrap system`, and uncomment `- waf` on the optimizer router.
 
@@ -332,6 +333,8 @@ http:
 ```
 
 To run a service behind the [Web Application Firewall](#putting-your-own-apps-behind-it), uncomment `- waf`, or use `- waf-uploads` for an app that takes large uploads. Keep it after any allowlist or auth middleware.
+
+If you add your own `forwardAuth` with `authResponseHeaders` in front of a PHP or CGI app, set `--entrypoints.websecure.http.aliasHeadersStrategy=delete` in `docker-compose.yml` (Traefik 3.7.12 or later; older versions refuse to start with it). Those apps read `X_Auth_User` or `X.Auth.User` as `X-Auth-User`, so without it a client can forge the identity header. It also strips any header with `_` or `.` in its name, which is why it is not on by default.
 
 ### IP Restrictions
 
